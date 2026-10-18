@@ -1,6 +1,7 @@
 'use strict';
 // ---- Data-driven definitions -------------------------------------------
 const HOT_START = 70, COOL = 0.05; // heat above HOT_START slows modules; passive cooling = COOL * stored heat per second
+const WEAR = 0.05, REPAIR_COST = 0.4, DRONE_RATE = 2; // condition points lost per running second (x2 when hot); repair cost factor; drone repair points per second
 const TICK = 0.1, SAVE_KEY = 'living-machine-v1', VERSION = 1;
 const RES = {
   energy:      { name: 'Energy',      cap: 200 },
@@ -22,6 +23,8 @@ const MODULES = {
     desc: 'Reprocesses salvage into processing substrate. Turns spare material into computation, at a cost in energy and heat.' },
 };
 const TECHS = {
+  drones:     { name: 'Repair Drones', type: 'New capability', cost: 120, signal: 20, req: ['diagnostics'],
+    desc: 'Automatically repair worn modules below a threshold you set, using material and a little energy.' },
   bus:        { name: 'Shared Resource Bus', type: 'New system', cost: 140, signal: 30, req: ['allocation'],
     desc: 'Energy that would be wasted at full storage can be routed into material (2:1) or signal data (4:1).' },
   analysis:   { name: 'Dormant-System Analysis', type: 'New system', cost: 100, signal: 20, req: [],
@@ -42,8 +45,7 @@ const TECHS = {
 function newState() {
   return { v: VERSION, t: 0,
     res: { energy: 20, material: 0, computation: 0, heat: 0, signal: 0 },
-    mods: { generator: { units: 1, on: true }, extractor: { units: 1, on: true }, computer: { units: 0, on: true },
-            scanner: { units: 0, on: true }, fabricator: { units: 0, on: true } },
+    mods: Object.fromEntries(Object.keys(MODULES).map(id => [id, { units: id === 'generator' || id === 'extractor' ? 1 : 0, on: true, cond: 100 }])), repairAt: 0,
     tech: {}, bus: 'off', order: ['computer', 'extractor', 'scanner', 'fabricator'], log: [], rates: {}, short: false, hot: false };
 }
 function log(s, m) { s.log.unshift({ t: Math.floor(s.t), m }); s.log.length = Math.min(s.log.length, 40); }
@@ -64,11 +66,20 @@ function tick(s, dt) {
     let k = 1; // fraction of demanded input actually available (never overdraws)
     for (const r in d.in) k = Math.min(k, R[r] / (d.in[r] * m.units * dt));
     if (k < 0.999) starved = true;
-    const run = k * (id === 'generator' ? 1 : eff); m.run = run; // heat slows consumers, not the generators that make it (avoids a death spiral)
+    const run = k * (id === 'generator' ? 1 : eff) * (0.5 + 0.5 * m.cond / 100); m.run = run;
+    m.cond = Math.max(0, m.cond - WEAR * dt * (hot ? 2 : 1)); // condition falls while running; low condition cuts output
+    if (m.cond < 50 && !m.warned) { m.warned = true; log(s, MODULES[id].name + ' is badly worn: output reduced.'); } // heat slows consumers, not the generators that make it (avoids a death spiral)
     for (const r in d.in) { const a = d.in[r] * m.units * dt * run; R[r] -= a; c[r] += a; }
     for (const r in d.out) {
       const bonus = (id === 'generator' && r === 'energy' && s.tech.conductors) ? 1.25 : 1;
       const a = d.out[r] * m.units * dt * run * bonus; R[r] += a; p[r] += a;
+    }
+  }
+  if (s.tech.drones && s.repairAt > 0) { // automation: repair the most worn module under the threshold
+    let w = null; for (const id of ['generator', ...s.order]) { const m = s.mods[id]; if (m.units > 0 && m.cond < s.repairAt && (!w || m.cond < s.mods[w].cond)) w = id; }
+    if (w && R.energy >= dt) {
+      const m = s.mods[w], a = Math.min(DRONE_RATE * dt, 100 - m.cond), mc = a * MODULES[w].base * m.units * REPAIR_COST / 100;
+      if (R.material >= mc) { m.cond += a; R.material -= mc; c.material += mc; R.energy -= dt; c.energy += dt; if (m.cond > 80) m.warned = false; }
     }
   }
   if (s.tech.thermal) { // rule change: heat -> energy
@@ -98,6 +109,13 @@ function setBus(s, id) {
   if (!s.tech.bus || !['off', 'material', 'signal'].includes(id) || s.bus === id) return;
   s.bus = id; log(s, id === 'off' ? 'Bus: overflow energy is wasted again.' : 'Bus: overflow energy now routed into ' + id + '.');
 }
+function repairCost(s, id) { const m = s.mods[id]; return Math.ceil(MODULES[id].base * m.units * REPAIR_COST * (100 - m.cond) / 100); }
+function repair(s, id) {
+  const m = s.mods[id], c = repairCost(s, id);
+  if (m.units < 1 || m.cond > 99 || s.res.material < c) return;
+  s.res.material -= c; m.cond = 100; m.warned = false;
+}
+function setRepairAt(s, v) { if (s.tech.drones && [0, 40, 70, 95].includes(v)) s.repairAt = v; }
 function toggle(s, id) { s.mods[id].on = !s.mods[id].on; }
 function research(s, id) {
   const t = TECHS[id];
@@ -114,8 +132,8 @@ function move(s, id, dir) { // swaps with the neighbouring *visible* module
 }
 
 // ---- Persistence ------------------------------------------------------------
-function serialize(s) { return JSON.stringify({ v: s.v, t: s.t, bus: s.bus, res: s.res, tech: s.tech, order: s.order, log: s.log,
-  mods: Object.fromEntries(Object.entries(s.mods).map(([k, m]) => [k, { units: m.units, on: m.on }])) }); }
+function serialize(s) { return JSON.stringify({ v: s.v, t: s.t, bus: s.bus, repairAt: s.repairAt, res: s.res, tech: s.tech, order: s.order, log: s.log,
+  mods: Object.fromEntries(Object.entries(s.mods).map(([k, m]) => [k, { units: m.units, on: m.on, cond: m.cond }])) }); }
 function deserialize(txt) { // tolerant of missing/invalid fields
   const s = newState();
   try {
@@ -123,10 +141,11 @@ function deserialize(txt) { // tolerant of missing/invalid fields
     s.t = num(d.t, 0);
     for (const r in RES) s.res[r] = Math.min(num(d.res && d.res[r], s.res[r]), RES[r].cap);
     for (const id in MODULES) if (d.mods && d.mods[id]) {
-      s.mods[id].units = Math.floor(num(d.mods[id].units, s.mods[id].units)); s.mods[id].on = d.mods[id].on !== false;
+      s.mods[id].units = Math.floor(num(d.mods[id].units, s.mods[id].units)); s.mods[id].on = d.mods[id].on !== false; s.mods[id].cond = Math.min(100, num(d.mods[id].cond, 100));
     }
     for (const id in TECHS) if (d.tech && d.tech[id]) s.tech[id] = true;
     if (Array.isArray(d.order) && d.order.length === s.order.length && s.order.every(x => d.order.includes(x))) s.order = d.order;
+    if ([0, 40, 70, 95].includes(d.repairAt)) s.repairAt = d.repairAt;
     if (['off', 'material', 'signal'].includes(d.bus)) s.bus = d.bus;
     if (Array.isArray(d.log)) s.log = d.log.slice(0, 40);
   } catch (e) { return newState(); }
@@ -135,4 +154,4 @@ function deserialize(txt) { // tolerant of missing/invalid fields
 function save(s) { try { localStorage.setItem(SAVE_KEY, serialize(s)); } catch (e) {} }
 function load() { try { const t = localStorage.getItem(SAVE_KEY); return t ? deserialize(t) : newState(); } catch (e) { return newState(); } }
 
-if (typeof module !== 'undefined') module.exports = { setBus, visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };
+if (typeof module !== 'undefined') module.exports = { repair, repairCost, setRepairAt, setBus, visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };

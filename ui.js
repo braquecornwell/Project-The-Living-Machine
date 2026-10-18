@@ -29,7 +29,10 @@ function render() {
   const busCard = S.tech.bus ? `<div class="mod"><div class="row"><b>Resource Bus</b><span class="dim">overflow energy</span></div>
     <p class="dim">When energy storage is full, route the excess instead of wasting it.</p>
     ${[['off', 'Waste it'], ['material', 'To material (2:1)'], ['signal', 'To signal (4:1)']].map(([k, n]) => `<button data-a="bus" data-id="${k}" ${S.bus === k ? 'disabled' : ''}>${n}</button>`).join('')}</div>` : '';
-  $('mods').innerHTML = busCard + ids.map(id => {
+  const droneCard = S.tech.drones ? `<div class="mod"><div class="row"><b>Repair Drones</b><span class="dim">${S.repairAt ? 'repairing below ' + S.repairAt + '%' : 'idle'}</span></div>
+    <p class="dim">Higher thresholds keep output up but spend more material and energy.</p>
+    ${[[0, 'Off'], [40, 'Below 40%'], [70, 'Below 70%'], [95, 'Below 95%']].map(([k, n]) => `<button data-a="repairAt" data-id="${k}" ${S.repairAt === k ? 'disabled' : ''}>${n}</button>`).join('')}</div>` : '';
+  $('mods').innerHTML = droneCard + busCard + ids.map(id => {
     const d = MODULES[id], m = S.mods[id], c = cost(S, id), ok = S.res.material >= c;
     const io = o => Object.entries(o).map(([r, n]) => n * Math.max(1, m.units) + ' ' + RES[r].name.toLowerCase()).join(', ') || 'nothing';
     const i = vis.indexOf(id);
@@ -37,7 +40,9 @@ function render() {
       <button data-a="up" data-id="${id}">▲</button><button data-a="down" data-id="${id}">▼</button></span>` : '';
     return `<div class="mod"><div class="row"><b>${d.name}</b><span class="dim">${m.units < 1 ? 'dormant' : m.on ? 'running ' + Math.round(m.run * 100) + '%' : 'switched off'}</span></div>
       <p class="dim">${d.desc}</p><p class="dim">Uses ${io(d.in)}/s. Makes ${io(d.out)}/s.</p>
+      ${m.units > 0 ? `<p class="dim">Condition ${Math.round(m.cond)}%${m.cond < 50 ? ' <b class="warn">worn</b>' : ''}</p>` : ''}
       <button data-a="buy" data-id="${id}" ${ok ? '' : 'disabled'}>${m.units < 1 ? 'Restore' : 'Add unit'} (${c} material)</button>
+      ${m.units > 0 && m.cond < 99 ? `<button data-a="repair" data-id="${id}" ${S.res.material >= repairCost(S, id) ? '' : 'disabled'}>Repair (${repairCost(S, id)} material)</button>` : ''}
       ${m.units > 0 ? `<button data-a="toggle" data-id="${id}">${m.on ? 'Switch off' : 'Switch on'}</button>` : ''}${prio}</div>`;
   }).join('');
 
@@ -54,7 +59,7 @@ document.addEventListener('pointerdown', e => {
   const b = e.target.closest('button[data-a]'); if (!b || b.disabled) return;
   const a = b.dataset.a, id = b.dataset.id;
   if (a === 'salvage') salvage(S); if (a === 'buy') buy(S, id); if (a === 'toggle') toggle(S, id);
-  if (a === 'bus') setBus(S, id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
+  if (a === 'bus') setBus(S, id); if (a === 'repair') repair(S, id); if (a === 'repairAt') setRepairAt(S, +id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();
