@@ -26,7 +26,10 @@ function render() {
     return `<div class="room ${st}"><b>${MODULES[id].name.split(' ').pop()}</b><span>${m.units} unit${m.units === 1 ? '' : 's'}</span></div>`;
   }).join('<div class="link"></div>') + `<div class="heat ${S.hot ? 'hot' : ''}" style="--h:${S.res.heat}%"></div>`;
 
-  $('mods').innerHTML = ids.map(id => {
+  const busCard = S.tech.bus ? `<div class="mod"><div class="row"><b>Resource Bus</b><span class="dim">overflow energy</span></div>
+    <p class="dim">When energy storage is full, route the excess instead of wasting it.</p>
+    ${[['off', 'Waste it'], ['material', 'To material (2:1)'], ['signal', 'To signal (4:1)']].map(([k, n]) => `<button data-a="bus" data-id="${k}" ${S.bus === k ? 'disabled' : ''}>${n}</button>`).join('')}</div>` : '';
+  $('mods').innerHTML = busCard + ids.map(id => {
     const d = MODULES[id], m = S.mods[id], c = cost(S, id), ok = S.res.material >= c;
     const io = o => Object.entries(o).map(([r, n]) => n * Math.max(1, m.units) + ' ' + RES[r].name.toLowerCase()).join(', ') || 'nothing';
     const i = vis.indexOf(id);
@@ -51,7 +54,7 @@ document.addEventListener('pointerdown', e => {
   const b = e.target.closest('button[data-a]'); if (!b || b.disabled) return;
   const a = b.dataset.a, id = b.dataset.id;
   if (a === 'salvage') salvage(S); if (a === 'buy') buy(S, id); if (a === 'toggle') toggle(S, id);
-  if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
+  if (a === 'bus') setBus(S, id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();

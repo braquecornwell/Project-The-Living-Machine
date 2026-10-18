@@ -22,6 +22,8 @@ const MODULES = {
     desc: 'Reprocesses salvage into processing substrate. Turns spare material into computation, at a cost in energy and heat.' },
 };
 const TECHS = {
+  bus:        { name: 'Shared Resource Bus', type: 'New system', cost: 140, signal: 30, req: ['allocation'],
+    desc: 'Energy that would be wasted at full storage can be routed into material (2:1) or signal data (4:1).' },
   analysis:   { name: 'Dormant-System Analysis', type: 'New system', cost: 100, signal: 20, req: [],
     desc: 'Decode survey signals to reveal a hidden module: the Fabrication Bay.' },
   conductors: { name: 'Improved Conductors', type: 'Efficiency', cost: 30, req: [],
@@ -42,7 +44,7 @@ function newState() {
     res: { energy: 20, material: 0, computation: 0, heat: 0, signal: 0 },
     mods: { generator: { units: 1, on: true }, extractor: { units: 1, on: true }, computer: { units: 0, on: true },
             scanner: { units: 0, on: true }, fabricator: { units: 0, on: true } },
-    tech: {}, order: ['computer', 'extractor', 'scanner', 'fabricator'], log: [], rates: {}, short: false, hot: false };
+    tech: {}, bus: 'off', order: ['computer', 'extractor', 'scanner', 'fabricator'], log: [], rates: {}, short: false, hot: false };
 }
 function log(s, m) { s.log.unshift({ t: Math.floor(s.t), m }); s.log.length = Math.min(s.log.length, 40); }
 function visible(s, id) { return !MODULES[id].hidden || !!s.tech.analysis; }
@@ -73,6 +75,10 @@ function tick(s, dt) {
     const x = R.heat * 0.15 * dt; R.heat -= x; c.heat += x; R.energy += x / 2; p.energy += x / 2;
   }
   const d = R.heat * COOL * (s.tech.radiators ? 2 : 1) * dt; R.heat -= d; c.heat += d;
+  if (s.tech.bus && s.bus !== 'off') { // rule change: overflow energy is exchanged over the bus instead of wasted
+    const over = Math.max(0, R.energy - RES.energy.cap);
+    if (over > 0) { const y = over * (s.bus === 'material' ? 0.5 : 0.25); R[s.bus] += y; p[s.bus] += y; c.energy += over; }
+  }
   for (const r in RES) { R[r] = Math.max(0, Math.min(R[r], RES[r].cap)); s.rates[r] = { p: p[r] / dt, c: c[r] / dt }; }
   if (starved && !s.short) log(s, 'Energy shortage: modules are throttled.');
   if (!starved && s.short) log(s, 'Energy supply recovered.');
@@ -87,6 +93,10 @@ function buy(s, id) {
   if (s.res.material < c) return;
   s.res.material -= c; m.units++;
   if (m.units === 1) log(s, MODULES[id].name + ' restored.');
+}
+function setBus(s, id) {
+  if (!s.tech.bus || !['off', 'material', 'signal'].includes(id) || s.bus === id) return;
+  s.bus = id; log(s, id === 'off' ? 'Bus: overflow energy is wasted again.' : 'Bus: overflow energy now routed into ' + id + '.');
 }
 function toggle(s, id) { s.mods[id].on = !s.mods[id].on; }
 function research(s, id) {
@@ -104,7 +114,7 @@ function move(s, id, dir) { // swaps with the neighbouring *visible* module
 }
 
 // ---- Persistence ------------------------------------------------------------
-function serialize(s) { return JSON.stringify({ v: s.v, t: s.t, res: s.res, tech: s.tech, order: s.order, log: s.log,
+function serialize(s) { return JSON.stringify({ v: s.v, t: s.t, bus: s.bus, res: s.res, tech: s.tech, order: s.order, log: s.log,
   mods: Object.fromEntries(Object.entries(s.mods).map(([k, m]) => [k, { units: m.units, on: m.on }])) }); }
 function deserialize(txt) { // tolerant of missing/invalid fields
   const s = newState();
@@ -117,6 +127,7 @@ function deserialize(txt) { // tolerant of missing/invalid fields
     }
     for (const id in TECHS) if (d.tech && d.tech[id]) s.tech[id] = true;
     if (Array.isArray(d.order) && d.order.length === s.order.length && s.order.every(x => d.order.includes(x))) s.order = d.order;
+    if (['off', 'material', 'signal'].includes(d.bus)) s.bus = d.bus;
     if (Array.isArray(d.log)) s.log = d.log.slice(0, 40);
   } catch (e) { return newState(); }
   return s;
@@ -124,4 +135,4 @@ function deserialize(txt) { // tolerant of missing/invalid fields
 function save(s) { try { localStorage.setItem(SAVE_KEY, serialize(s)); } catch (e) {} }
 function load() { try { const t = localStorage.getItem(SAVE_KEY); return t ? deserialize(t) : newState(); } catch (e) { return newState(); } }
 
-if (typeof module !== 'undefined') module.exports = { visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };
+if (typeof module !== 'undefined') module.exports = { setBus, visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };
