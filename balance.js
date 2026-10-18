@@ -9,9 +9,12 @@ function run(clickSecs = 120, total = 1800, verbose = true) {
       if (!s.mods.computer.units) g.buy(s, 'computer');
       else {
         if (!s.hot && (s.short || s.res.energy < 15)) { if (s.res.material >= 15 * Math.pow(1.4, s.mods.generator.units)) { g.buy(s, 'generator'); mark('gen' + s.mods.generator.units); } }
-        for (const t of ['conductors', 'thermal', 'allocation', 'diagnostics', 'radiators']) {
+        for (const t of ['conductors', 'thermal', 'allocation', 'analysis', 'diagnostics', 'radiators']) {
           const before = !!s.tech[t]; g.research(s, t); if (!before && s.tech[t]) mark('tech:' + t);
         }
+        const surplus = !s.short && (s.rates.energy.p - s.rates.energy.c) > 2;
+        if (surplus && !s.mods.scanner.units && s.res.material >= 40) { g.buy(s, 'scanner'); mark('scanner restored'); }
+        if (surplus && g.visible(s, 'fabricator') && !s.mods.fabricator.units && s.res.material >= 60) { g.buy(s, 'fabricator'); mark('fabricator restored'); }
         if (s.mods.computer.units < 3 && s.res.material > 60) g.buy(s, 'computer');
         else if (s.res.material > 100 && !s.short && (s.rates.energy.p - s.rates.energy.c) > 2) g.buy(s, 'extractor');
       }

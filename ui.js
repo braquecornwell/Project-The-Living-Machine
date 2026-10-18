@@ -20,7 +20,7 @@ function render() {
       <div class="row dim"><span>+${x.p.toFixed(1)} / -${x.c.toFixed(1)} per s</span><span>${S.tech.diagnostics ? eta(r) : sign(x.p - x.c) + '/s'}</span></div></div>`;
   }).join('') + `<button data-a="salvage">Salvage by hand (+2 material)</button>`;
 
-  const ids = ['generator', ...S.order];
+  const ids = ['generator', ...S.order].filter(id => visible(S, id)), vis = S.order.filter(id => visible(S, id));
   $('map').innerHTML = ids.map(id => {
     const m = S.mods[id], st = m.units < 1 ? 'dormant' : !m.on ? 'off' : m.run < 0.99 ? 'strained' : 'live';
     return `<div class="room ${st}"><b>${MODULES[id].name.split(' ').pop()}</b><span>${m.units} unit${m.units === 1 ? '' : 's'}</span></div>`;
@@ -29,7 +29,7 @@ function render() {
   $('mods').innerHTML = ids.map(id => {
     const d = MODULES[id], m = S.mods[id], c = cost(S, id), ok = S.res.material >= c;
     const io = o => Object.entries(o).map(([r, n]) => n * Math.max(1, m.units) + ' ' + RES[r].name.toLowerCase()).join(', ') || 'nothing';
-    const i = S.order.indexOf(id);
+    const i = vis.indexOf(id);
     const prio = S.tech.allocation && i >= 0 ? `<span class="prio">priority ${i + 1}
       <button data-a="up" data-id="${id}">▲</button><button data-a="down" data-id="${id}">▼</button></span>` : '';
     return `<div class="mod"><div class="row"><b>${d.name}</b><span class="dim">${m.units < 1 ? 'dormant' : m.on ? 'running ' + Math.round(m.run * 100) + '%' : 'switched off'}</span></div>
@@ -39,9 +39,9 @@ function render() {
   }).join('');
 
   $('tech').innerHTML = Object.entries(TECHS).map(([id, t]) => {
-    const have = S.tech[id], reqOk = t.req.every(r => S.tech[r]), ok = reqOk && S.res.computation >= t.cost;
+    const have = S.tech[id], reqOk = t.req.every(r => S.tech[r]), ok = reqOk && S.res.computation >= t.cost && S.res.signal >= (t.signal || 0);
     return `<div class="mod ${have ? 'done' : ''}"><div class="row"><b>${t.name}</b><span class="dim">${t.type}</span></div><p class="dim">${t.desc}</p>
-      ${have ? '<span class="dim">Researched</span>' : reqOk ? `<button data-a="research" data-id="${id}" ${ok ? '' : 'disabled'}>Research (${t.cost} computation)</button>`
+      ${have ? '<span class="dim">Researched</span>' : reqOk ? `<button data-a="research" data-id="${id}" ${ok ? '' : 'disabled'}>Research (${t.cost} computation${t.signal ? ' + ' + t.signal + ' signal' : ''})</button>`
       : `<span class="dim">Requires ${t.req.map(r => TECHS[r].name).join(', ')}</span>`}</div>`;
   }).join('');
 

@@ -7,6 +7,7 @@ const RES = {
   material:    { name: 'Material',    cap: 500 },
   computation: { name: 'Computation', cap: 500 },
   heat:        { name: 'Heat',        cap: 100 },
+  signal:      { name: 'Signal data', cap: 200 },
 };
 const MODULES = {
   generator: { name: 'Basic Generator',   base: 15, in: {},             out: { energy: 4, heat: 2 },
@@ -15,8 +16,14 @@ const MODULES = {
     desc: 'Strips the hull for structural material.' },
   computer:  { name: 'Computation Core',  base: 30, in: { energy: 3 },   out: { computation: 1, heat: 1.5 },
     desc: 'Dormant processors. Computation pays for research.' },
+  scanner:   { name: 'Survey Array',      base: 40, in: { energy: 2 },   out: { signal: 0.5, heat: 1 },
+    desc: 'Listens to dormant systems. Signal data is needed to understand unknown architecture.' },
+  fabricator:{ name: 'Fabrication Bay',   base: 60, in: { energy: 3, material: 2 }, out: { computation: 2, heat: 2 }, hidden: true,
+    desc: 'Reprocesses salvage into processing substrate. Turns spare material into computation, at a cost in energy and heat.' },
 };
 const TECHS = {
+  analysis:   { name: 'Dormant-System Analysis', type: 'New system', cost: 100, signal: 20, req: [],
+    desc: 'Decode survey signals to reveal a hidden module: the Fabrication Bay.' },
   conductors: { name: 'Improved Conductors', type: 'Efficiency', cost: 30, req: [],
     desc: 'Generators produce 25% more energy.' },
   thermal:    { name: 'Thermal Recovery', type: 'New capability', cost: 60, req: [],
@@ -32,11 +39,13 @@ const TECHS = {
 // ---- State ---------------------------------------------------------------
 function newState() {
   return { v: VERSION, t: 0,
-    res: { energy: 20, material: 0, computation: 0, heat: 0 },
-    mods: { generator: { units: 1, on: true }, extractor: { units: 1, on: true }, computer: { units: 0, on: true } },
-    tech: {}, order: ['computer', 'extractor'], log: [], rates: {}, short: false, hot: false };
+    res: { energy: 20, material: 0, computation: 0, heat: 0, signal: 0 },
+    mods: { generator: { units: 1, on: true }, extractor: { units: 1, on: true }, computer: { units: 0, on: true },
+            scanner: { units: 0, on: true }, fabricator: { units: 0, on: true } },
+    tech: {}, order: ['computer', 'extractor', 'scanner', 'fabricator'], log: [], rates: {}, short: false, hot: false };
 }
 function log(s, m) { s.log.unshift({ t: Math.floor(s.t), m }); s.log.length = Math.min(s.log.length, 40); }
+function visible(s, id) { return !MODULES[id].hidden || !!s.tech.analysis; }
 function cost(s, id) { return Math.ceil(MODULES[id].base * Math.pow(1.4, s.mods[id].units)); }
 
 // ---- Simulation (fixed step, deterministic order) -------------------------
@@ -82,14 +91,16 @@ function buy(s, id) {
 function toggle(s, id) { s.mods[id].on = !s.mods[id].on; }
 function research(s, id) {
   const t = TECHS[id];
-  if (s.tech[id] || s.res.computation < t.cost || !t.req.every(r => s.tech[r])) return;
-  s.res.computation -= t.cost; s.tech[id] = true;
+  if (s.tech[id] || s.res.computation < t.cost || s.res.signal < (t.signal || 0) || !t.req.every(r => s.tech[r])) return;
+  s.res.computation -= t.cost; s.res.signal -= (t.signal || 0); s.tech[id] = true;
   log(s, 'Researched ' + t.name + '. ' + t.desc);
+  if (id === 'analysis') log(s, 'Discovery: a dormant Fabrication Bay is now accessible.');
 }
-function move(s, id, dir) {
-  const i = s.order.indexOf(id), j = i + dir;
-  if (!s.tech.allocation || j < 0 || j >= s.order.length) return;
-  [s.order[i], s.order[j]] = [s.order[j], s.order[i]];
+function move(s, id, dir) { // swaps with the neighbouring *visible* module
+  const vis = s.order.filter(x => visible(s, x)), i = vis.indexOf(id), j = i + dir;
+  if (!s.tech.allocation || i < 0 || j < 0 || j >= vis.length) return;
+  const a = s.order.indexOf(id), b = s.order.indexOf(vis[j]);
+  [s.order[a], s.order[b]] = [s.order[b], s.order[a]];
 }
 
 // ---- Persistence ------------------------------------------------------------
@@ -113,4 +124,4 @@ function deserialize(txt) { // tolerant of missing/invalid fields
 function save(s) { try { localStorage.setItem(SAVE_KEY, serialize(s)); } catch (e) {} }
 function load() { try { const t = localStorage.getItem(SAVE_KEY); return t ? deserialize(t) : newState(); } catch (e) { return newState(); } }
 
-if (typeof module !== 'undefined') module.exports = { newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };
+if (typeof module !== 'undefined') module.exports = { visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };
