@@ -16,3 +16,9 @@ const c0=w2.mods.generator.cond;w2.res.material=100;const m1=w2.res.material;g.r
 console.log('wear:',c0<100&&c0>80,'| repair restores+charges:',w2.mods.generator.cond===100&&w2.res.material<m1);
 const d2=g.newState();d2.tech.drones=true;g.setRepairAt(d2,70);d2.mods.generator.cond=50;d2.res.material=50;d2.res.energy=100;for(let i=0;i<100;i++)g.tick(d2,g.TICK);
 console.log('drones repair:',d2.mods.generator.cond>60,'| old save cond default:',old.mods.generator.cond===100);
+// overclock: throughput, input cost and wear scale by mode
+function mode(x){const q=g.newState();q.tech.overclock=true;q.mods.computer.units=1;g.setMode(q,'computer',x);q.mods.generator.on=false;q.res.energy=200;
+ for(let i=0;i<100;i++){q.res.energy=200;g.tick(q,g.TICK);} return q;}
+const E=mode('eco'),N=mode('normal'),O=mode('oc');
+console.log('modes output eco<normal<oc:',E.res.computation<N.res.computation&&N.res.computation<O.res.computation,'| wear oc>normal>eco:',O.mods.computer.cond<N.mods.computer.cond&&N.mods.computer.cond<E.mods.computer.cond);
+const nt=g.newState();nt.mods.computer.units=1;g.setMode(nt,'computer','oc');console.log('mode ignored without tech:',nt.mods.computer.mode==='normal');

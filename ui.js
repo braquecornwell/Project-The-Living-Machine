@@ -42,6 +42,7 @@ function render() {
       <p class="dim">${d.desc}</p><p class="dim">Uses ${io(d.in)}/s. Makes ${io(d.out)}/s.</p>
       ${m.units > 0 ? `<p class="dim">Condition ${Math.round(m.cond)}%${m.cond < 50 ? ' <b class="warn">worn</b>' : ''}</p>` : ''}
       <button data-a="buy" data-id="${id}" ${ok ? '' : 'disabled'}>${m.units < 1 ? 'Restore' : 'Add unit'} (${c} material)</button>
+      ${S.tech.overclock && m.units > 0 ? [['eco', 'Eco'], ['normal', 'Normal'], ['oc', 'Overclock']].map(([k, n]) => `<button data-a="mode" data-id="${id}" data-m="${k}" ${m.mode === k ? 'disabled' : ''}>${n}</button>`).join('') + '<br>' : ''}
       ${m.units > 0 && m.cond < 99 ? `<button data-a="repair" data-id="${id}" ${S.res.material >= repairCost(S, id) ? '' : 'disabled'}>Repair (${repairCost(S, id)} material)</button>` : ''}
       ${m.units > 0 ? `<button data-a="toggle" data-id="${id}">${m.on ? 'Switch off' : 'Switch on'}</button>` : ''}${prio}</div>`;
   }).join('');
@@ -59,7 +60,7 @@ document.addEventListener('pointerdown', e => {
   const b = e.target.closest('button[data-a]'); if (!b || b.disabled) return;
   const a = b.dataset.a, id = b.dataset.id;
   if (a === 'salvage') salvage(S); if (a === 'buy') buy(S, id); if (a === 'toggle') toggle(S, id);
-  if (a === 'bus') setBus(S, id); if (a === 'repair') repair(S, id); if (a === 'repairAt') setRepairAt(S, +id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
+  if (a === 'bus') setBus(S, id); if (a === 'mode') setMode(S, id, b.dataset.m); if (a === 'repair') repair(S, id); if (a === 'repairAt') setRepairAt(S, +id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();
