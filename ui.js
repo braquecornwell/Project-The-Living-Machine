@@ -1,5 +1,5 @@
 'use strict';
-let S = load(), last = Date.now(), acc = 0;
+let S = load(), last = Date.now(), acc = 0, focusId = null;
 const $ = id => document.getElementById(id);
 const f = n => n >= 100 ? n.toFixed(0) : n.toFixed(1);
 const sign = n => (n >= 0 ? '+' : '') + n.toFixed(1);
@@ -21,11 +21,20 @@ function render() {
   }).join('') + `<button data-a="salvage">Salvage by hand (+2 material)</button>`;
 
   const ids = ['generator', ...S.order].filter(id => visible(S, id)), vis = S.order.filter(id => visible(S, id));
-  $('map').innerHTML = ids.map(id => {
-    const m = S.mods[id], st = m.units < 1 ? 'dormant' : !m.on ? 'off' : m.run < 0.99 ? 'strained' : 'live';
-    return `<div class="room ${st}"><b>${MODULES[id].name.split(' ').pop()}</b><span>${m.units} unit${m.units === 1 ? '' : 's'}</span></div>`;
-  }).join('<div class="link"></div>') + `<div class="heat ${S.hot ? 'hot' : ''}" style="--h:${S.res.heat}%"></div>`;
-
+  const stat = id => { const m = S.mods[id]; return m.units < 1 ? 'dormant' : !m.on ? 'off' : m.cond < 50 ? 'worn' : m.run < 0.99 ? 'strained' : 'live'; };
+  const rooms = ids.map(id => {
+    const m = S.mods[id], cc = m.cond < 30 ? 'bad' : m.cond < 60 ? 'mid' : '';
+    const tag = m.units < 1 ? 'dormant' : !m.on ? 'switched off' : 'running ' + Math.round(m.run * 100) + '%';
+    const mode = S.tech.overclock && m.units > 0 && m.mode !== 'normal' ? `<span class="mode">${m.mode === 'oc' ? 'overclocked' : 'eco mode'}</span>` : '';
+    return `<button class="room ${stat(id)}" data-a="focus" data-id="${id}" title="Show ${MODULES[id].name}"><b>${MODULES[id].name.split(' ').pop()}</b>
+      <span>${m.units < 1 ? 'not restored' : m.units + (m.units === 1 ? ' unit' : ' units')}</span>${mode}
+      <div class="cond ${cc}" title="Condition ${Math.round(m.cond)}%"><i style="width:${m.units < 1 ? 0 : m.cond}%"></i></div><span>${tag}</span></button>`;
+  });
+  if (!S.tech.analysis && S.mods.scanner.units > 0) rooms.push('<div class="room locked"><b>Unknown</b><span>unidentified signal</span><div class="cond"></div><span>needs analysis</span></div>');
+  const linked = rooms.map((h, i) => i && i <= ids.length - 1 && S.mods[ids[i - 1]].run > 0 && S.mods[ids[i]].run > 0 ? '<div class="link flow"></div>' : '<div class="link"></div>');
+  $('map').innerHTML = `<div class="rooms">${rooms.map((h, i) => (i ? linked[i] : '') + h).join('')}</div>
+    <div class="gauge"><div class="row dim"><span>Structure heat</span><span>${f(S.res.heat)} / ${RES.heat.cap}${S.hot ? ' <b class="warn">slowing modules</b>' : ''}</span></div>
+    <div class="gbar ${S.hot ? 'hot' : ''}"><i style="width:${S.res.heat}%"></i><u style="left:${HOT_START}%" title="Modules slow above ${HOT_START}"></u></div></div>`;
   const busCard = S.tech.bus ? `<div class="mod"><div class="row"><b>Resource Bus</b><span class="dim">overflow energy</span></div>
     <p class="dim">When energy storage is full, route the excess instead of wasting it.</p>
     ${[['off', 'Waste it'], ['material', 'To material (2:1)'], ['signal', 'To signal (4:1)']].map(([k, n]) => `<button data-a="bus" data-id="${k}" ${S.bus === k ? 'disabled' : ''}>${n}</button>`).join('')}</div>` : '';
@@ -38,7 +47,7 @@ function render() {
     const i = vis.indexOf(id);
     const prio = S.tech.allocation && i >= 0 ? `<span class="prio">priority ${i + 1}
       <button data-a="up" data-id="${id}">▲</button><button data-a="down" data-id="${id}">▼</button></span>` : '';
-    return `<div class="mod"><div class="row"><b>${d.name}</b><span class="dim">${m.units < 1 ? 'dormant' : m.on ? 'running ' + Math.round(m.run * 100) + '%' : 'switched off'}</span></div>
+    return `<div class="mod ${focusId === id ? 'focus' : ''}" id="mod-${id}"><div class="row"><b>${d.name}</b><span class="dim">${m.units < 1 ? 'dormant' : m.on ? 'running ' + Math.round(m.run * 100) + '%' : 'switched off'}</span></div>
       <p class="dim">${d.desc}</p><p class="dim">Uses ${io(d.in)}/s. Makes ${io(d.out)}/s.</p>
       ${m.units > 0 ? `<p class="dim">Condition ${Math.round(m.cond)}%${m.cond < 50 ? ' <b class="warn">worn</b>' : ''}</p>` : ''}
       <button data-a="buy" data-id="${id}" ${ok ? '' : 'disabled'}>${m.units < 1 ? 'Restore' : 'Add unit'} (${c} material)</button>
@@ -64,6 +73,10 @@ document.addEventListener('pointerdown', e => {
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();
+  if (a === 'focus' && S.mods[id]) {
+    focusId = id; setTimeout(() => { if (focusId === id) focusId = null; }, 1500); render();
+    const el = $('mod-' + id); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+  }
 });
 setInterval(() => {
   const now = Date.now(); acc += Math.min(now - last, 5000) / 1000; last = now;
