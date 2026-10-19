@@ -13,7 +13,10 @@ function eta(r) {
 }
 
 // ---- Structure picture: dim cutaway, each restored module lights its region -------------
-const REGIONS = { generator: [78, 13, 20, 17], computer: [8, 38, 17, 24], extractor: [13, 69, 21, 16], scanner: [40, 70, 22, 16], fabricator: [47, 27, 22, 19] }; // x, y, w, h in % of the picture
+const REGIONS = { // x, y, w, h in % of the picture, and what the room belongs to: a module or a technology
+  generator: [55, 14, 35, 27, 'mod'], computer: [12.5, 22, 38, 15.5, 'mod'], extractor: [11, 58, 18, 29, 'mod'], scanner: [36, 52, 15, 13, 'mod'], fabricator: [59.5, 53, 24.5, 35, 'mod'],
+  conductors: [55, 41, 34.2, 9.8, 'tech'], thermal: [12, 37.6, 20.5, 18, 'tech'], diagnostics: [36, 37.6, 14.5, 13, 'tech'], bus: [28.5, 67.4, 22.5, 14.6, 'tech'] };
+const TECH_LABEL = { conductors: 'Conductors', thermal: 'Thermal', diagnostics: 'Diagnostics', bus: 'Bus' };
 let zones = {};
 function modStat(id) { const m = S.mods[id]; return m.units < 1 ? 'dormant' : !m.on ? 'off' : m.cond < 50 ? 'worn' : m.run < 0.99 ? 'strained' : 'live'; }
 function initStage() {
@@ -24,7 +27,15 @@ function initStage() {
 }
 function updateStage() {
   for (const id in REGIONS) {
-    const z = zones[id], m = S.mods[id]; if (!z) continue;
+    const z = zones[id]; if (!z) continue;
+    if (REGIONS[id][4] === 'tech') { // rooms that wake up when their technology is researched
+      const have = !!S.tech[id];
+      z.className = 'zone tech ' + (have ? 'live' : 'dormant');
+      z.querySelector('.zl').textContent = have ? TECH_LABEL[id] : '';
+      z.title = TECHS[id].name + (have ? ': active' : ': not researched');
+      continue;
+    }
+    const m = S.mods[id];
     const locked = !visible(S, id), mode = S.tech.overclock && m.units > 0 && m.mode !== 'normal' ? m.mode : '';
     z.className = 'zone ' + (locked ? 'locked' + (S.mods.scanner.units < 1 ? ' hide' : '') : modStat(id) + ' ' + mode);
     z.querySelector('.zl').textContent = locked ? '?' : MODULES[id].name.split(' ').pop();
@@ -81,7 +92,7 @@ function render() {
 
   $('tech').innerHTML = Object.entries(TECHS).map(([id, t]) => {
     const have = S.tech[id], reqOk = t.req.every(r => S.tech[r]), ok = reqOk && S.res.computation >= t.cost && S.res.signal >= (t.signal || 0);
-    return `<div class="mod ${have ? 'done' : ''}"><div class="row"><b>${t.name}</b><span class="dim">${t.type}</span></div><p class="dim">${t.desc}</p>
+    return `<div class="mod ${have ? 'done' : ''} ${focusId === id ? 'focus' : ''}" id="tech-${id}"><div class="row"><b>${t.name}</b><span class="dim">${t.type}</span></div><p class="dim">${t.desc}</p>
       ${have ? '<span class="dim">Researched</span>' : reqOk ? `<button data-a="research" data-id="${id}" ${ok ? '' : 'disabled'}>Research (${t.cost} computation${t.signal ? ' + ' + t.signal + ' signal' : ''})</button>`
       : `<span class="dim">Requires ${t.req.map(r => TECHS[r].name).join(', ')}</span>`}</div>`;
   }).join('');
@@ -96,9 +107,9 @@ document.addEventListener('pointerdown', e => {
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();
-  if (a === 'focus' && S.mods[id] && visible(S, id)) {
+  if (a === 'focus' && REGIONS[id] && (REGIONS[id][4] === 'tech' || visible(S, id))) {
     focusId = id; setTimeout(() => { if (focusId === id) focusId = null; }, 1500); render();
-    const el = $('mod-' + id); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+    const el = $((REGIONS[id][4] === 'tech' ? 'tech-' : 'mod-') + id); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
   }
 });
 setInterval(() => {

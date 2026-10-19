@@ -23,10 +23,9 @@ button:hover:not(:disabled){border-color:var(--computation)}button:disabled{opac
 .gauge{margin-top:12px}.gbar{position:relative;height:8px;background:#0a0e13;margin-top:4px}.gbar i{display:block;height:100%;background:var(--material)}.gbar.hot i{background:var(--heat)}
 .gbar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--dim)}
 .mod.focus{border-color:var(--computation);box-shadow:0 0 0 1px var(--computation)}
-.stagebox{position:relative;aspect-ratio:1;background:url(assets/machine.jpg) center/cover;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-bottom:10px}
-.stagebox::before{content:"";position:absolute;inset:0;background:rgba(8,12,18,.8)}
+.stagebox{position:relative;aspect-ratio:1;background:url(assets/dark.jpg) center/cover;border:1px solid var(--line);border-radius:4px;overflow:hidden;margin-bottom:10px}
 .zone{position:absolute;margin:0;padding:0;border:1px solid transparent;background:none;border-radius:6px;cursor:pointer;overflow:hidden;transition:box-shadow .6s}
-.zone::before{content:"";position:absolute;inset:0;background:url(assets/machine.jpg) var(--bp)/var(--bs) no-repeat;-webkit-mask-image:radial-gradient(ellipse at center,#000 55%,transparent 100%);mask-image:radial-gradient(ellipse at center,#000 55%,transparent 100%);transition:opacity .6s}
+.zone::before{content:"";position:absolute;inset:0;background:url(assets/lit.jpg) var(--bp)/var(--bs) no-repeat;-webkit-mask-image:radial-gradient(ellipse at center,#000 88%,transparent 100%);mask-image:radial-gradient(ellipse at center,#000 88%,transparent 100%);transition:opacity .6s}
 .zone.dormant::before,.zone.locked::before{opacity:0}.zone.off::before{opacity:.35}.zone.strained::before{opacity:.85}
 .zone:hover,.zone:focus-visible{border-color:var(--dim);outline:none}
 .zone.dormant{border-color:#ffffff14;border-style:dashed}.zone.locked{border:1px dotted var(--dim)}.zone.hide{display:none}
@@ -37,3 +36,5 @@ button:hover:not(:disabled){border-color:var(--computation)}button:disabled{opac
 .worn .zc i{background:var(--heat)}
 .hglow{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 100%,#d9644a66,transparent 70%);transition:opacity .5s}.hglow.hot{background:radial-gradient(ellipse at 50% 100%,#e8402aaa,transparent 75%)}
 @media(prefers-reduced-motion:reduce){.zone,.zone::before,.hglow{transition:none}}
+
+.zone.tech.dormant{border-color:transparent}.zone.tech.dormant:hover{border-color:var(--dim)}.zone.tech .zc{display:none}.zl:empty{display:none}
