@@ -22,3 +22,10 @@ function mode(x){const q=g.newState();q.tech.overclock=true;q.mods.computer.unit
 const E=mode('eco'),N=mode('normal'),O=mode('oc');
 console.log('modes output eco<normal<oc:',E.res.computation<N.res.computation&&N.res.computation<O.res.computation,'| wear oc>normal>eco:',O.mods.computer.cond<N.mods.computer.cond&&N.mods.computer.cond<E.mods.computer.cond);
 const nt=g.newState();nt.mods.computer.units=1;g.setMode(nt,'computer','oc');console.log('mode ignored without tech:',nt.mods.computer.mode==='normal');
+// thermal trip: shuts everything down, damages modules, clears when cool
+const tr=g.newState();tr.res.heat=99.99;g.tick(tr,g.TICK);
+const e0=tr.res.energy;g.tick(tr,g.TICK);
+console.log('trip fires:',tr.trip&&tr.mods.generator.cond<90&&tr.mods.generator.run===0);
+tr.res.heat=39;g.tick(tr,g.TICK);console.log('trip clears when cool:',tr.trip===false);
+const hw=g.newState(),cw=g.newState();hw.res.heat=80;for(let i=0;i<100;i++){hw.res.heat=80;g.tick(hw,g.TICK);cw.res.heat=0;g.tick(cw,g.TICK);}
+console.log('hot wears faster:',hw.mods.generator.cond<cw.mods.generator.cond);

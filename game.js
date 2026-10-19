@@ -1,6 +1,6 @@
 'use strict';
 // ---- Data-driven definitions -------------------------------------------
-const HOT_START = 70, COOL = 0.05; // heat above HOT_START slows modules; passive cooling = COOL * stored heat per second
+const HOT_START = 60, TRIP_CLEAR = 40, TRIP_DAMAGE = 15, COOL = 0.05; // above HOT_START modules slow and wear faster; at the cap a thermal trip shuts everything down until heat < TRIP_CLEAR; passive cooling = COOL * stored heat per second
 const WEAR = 0.05, REPAIR_COST = 0.4, DRONE_RATE = 2; // condition points lost per running second (x2 when hot); repair cost factor; drone repair points per second
 // Operating modes (unlocked by Overclock Control): output, input and wear multipliers. Overclocking costs more input per output.
 const MODES = { eco: { out: 0.6, inp: 0.5, wear: 0.5 }, normal: { out: 1, inp: 1, wear: 1 }, oc: { out: 1.5, inp: 1.8, wear: 2.5 } };
@@ -36,7 +36,7 @@ const TECHS = {
   conductors: { name: 'Improved Conductors', type: 'Efficiency', cost: 30, req: [],
     desc: 'Generators produce 25% more energy.' },
   thermal:    { name: 'Thermal Recovery', type: 'New capability', cost: 60, req: [],
-    desc: 'Converts 15% of stored heat per second into energy (50% efficiency). Heat stops being only waste.' },
+    desc: 'Converts 8% of stored heat per second into energy (50% efficiency). Heat stops being only waste and cools the machine.' },
   allocation: { name: 'Automated Allocation', type: 'New system', cost: 80, req: [],
     desc: 'Set which modules get energy first when it is scarce.' },
   diagnostics:{ name: 'Integrated Diagnostics', type: 'New capability', cost: 110, req: ['allocation'],
@@ -50,7 +50,7 @@ function newState() {
   return { v: VERSION, t: 0,
     res: { energy: 20, material: 0, computation: 0, heat: 0, signal: 0 },
     mods: Object.fromEntries(Object.keys(MODULES).map(id => [id, { units: id === 'generator' || id === 'extractor' ? 1 : 0, on: true, cond: 100, mode: 'normal' }])), repairAt: 0,
-    tech: {}, bus: 'off', order: ['computer', 'extractor', 'scanner', 'fabricator'], log: [], rates: {}, short: false, hot: false };
+    tech: {}, bus: 'off', trip: false, crit: false, order: ['computer', 'extractor', 'scanner', 'fabricator'], log: [], rates: {}, short: false, hot: false };
 }
 function log(s, m) { s.log.unshift({ t: Math.floor(s.t), m }); s.log.length = Math.min(s.log.length, 40); }
 function visible(s, id) { return !MODULES[id].hidden || !!s.tech.analysis; }
@@ -60,19 +60,23 @@ function cost(s, id) { return Math.ceil(MODULES[id].base * Math.pow(1.4, s.mods[
 function tick(s, dt) {
   const p = {}, c = {}, R = s.res;
   for (const r in RES) p[r] = c[r] = 0;
-  const hot = R.heat > HOT_START, eff = hot ? 1 - 0.5 * Math.min(1, (R.heat - HOT_START) / (RES.heat.cap - HOT_START)) : 1;
+  if (!s.trip && R.heat >= RES.heat.cap - 0.01) { // thermal trip: the real cost of running too hot
+    s.trip = true; for (const id in s.mods) if (s.mods[id].units > 0) s.mods[id].cond = Math.max(0, s.mods[id].cond - TRIP_DAMAGE);
+    log(s, 'THERMAL TRIP: heat hit the limit. Every module shuts down and is damaged until heat falls below ' + TRIP_CLEAR + '.');
+  } else if (s.trip && R.heat <= TRIP_CLEAR) { s.trip = false; log(s, 'Thermal trip cleared: systems restarting.'); }
+  const frac = Math.max(0, Math.min(1, (R.heat - HOT_START) / (RES.heat.cap - HOT_START))), hot = frac > 0, eff = 1 - 0.6 * frac;
   let starved = false;
   // Generators first, then consumers in player-set priority order.
   for (const id of ['generator', ...s.order]) {
     const d = MODULES[id], m = s.mods[id];
     m.run = 0;
-    if (!m.on || m.units < 1) continue;
+    if (!m.on || m.units < 1 || s.trip) continue;
     const md = MODES[s.tech.overclock ? m.mode : 'normal'];
     let k = 1; // fraction of demanded input actually available (never overdraws)
     for (const r in d.in) k = Math.min(k, R[r] / (d.in[r] * m.units * dt * md.inp));
     if (k < 0.999) starved = true;
     const run = k * (id === 'generator' ? 1 : eff) * (0.5 + 0.5 * m.cond / 100); m.run = run;
-    m.cond = Math.max(0, m.cond - WEAR * dt * (hot ? 2 : 1) * md.wear); // condition falls while running; low condition cuts output
+    m.cond = Math.max(0, m.cond - WEAR * dt * (1 + 3 * frac) * md.wear); // condition falls while running; low condition cuts output
     if (m.cond < 50 && !m.warned) { m.warned = true; log(s, MODULES[id].name + ' is badly worn: output reduced.'); } // heat slows consumers, not the generators that make it (avoids a death spiral)
     for (const r in d.in) { const a = d.in[r] * m.units * dt * run * md.inp; R[r] -= a; c[r] += a; }
     for (const r in d.out) {
@@ -88,7 +92,7 @@ function tick(s, dt) {
     }
   }
   if (s.tech.thermal) { // rule change: heat -> energy
-    const x = R.heat * 0.15 * dt; R.heat -= x; c.heat += x; R.energy += x / 2; p.energy += x / 2;
+    const x = R.heat * 0.08 * dt; R.heat -= x; c.heat += x; R.energy += x / 2; p.energy += x / 2;
   }
   const d = R.heat * COOL * (s.tech.radiators ? 2 : 1) * dt; R.heat -= d; c.heat += d;
   if (s.tech.bus && s.bus !== 'off') { // rule change: overflow energy is exchanged over the bus instead of wasted
@@ -98,7 +102,9 @@ function tick(s, dt) {
   for (const r in RES) { R[r] = Math.max(0, Math.min(R[r], RES[r].cap)); s.rates[r] = { p: p[r] / dt, c: c[r] / dt }; }
   if (starved && !s.short) log(s, 'Energy shortage: modules are throttled.');
   if (!starved && s.short) log(s, 'Energy supply recovered.');
-  if (hot && !s.hot) log(s, 'Running hot: above ' + HOT_START + ' heat, consumer modules slow down (down to 50% at full).');
+  if (hot && !s.hot) log(s, 'Running hot: above ' + HOT_START + ' heat, consumer modules slow and every module wears faster.');
+  if (R.heat >= 90 && !s.crit) { s.crit = true; log(s, 'Critical heat: the structure trips at ' + RES.heat.cap + '.'); }
+  if (R.heat < 80) s.crit = false;
   s.short = starved; s.hot = hot; s.t += dt;
 }
 
@@ -138,7 +144,7 @@ function move(s, id, dir) { // swaps with the neighbouring *visible* module
 }
 
 // ---- Persistence ------------------------------------------------------------
-function serialize(s) { return JSON.stringify({ v: s.v, t: s.t, bus: s.bus, repairAt: s.repairAt, res: s.res, tech: s.tech, order: s.order, log: s.log,
+function serialize(s) { return JSON.stringify({ v: s.v, t: s.t, bus: s.bus, trip: s.trip, repairAt: s.repairAt, res: s.res, tech: s.tech, order: s.order, log: s.log,
   mods: Object.fromEntries(Object.entries(s.mods).map(([k, m]) => [k, { units: m.units, on: m.on, cond: m.cond, mode: m.mode }])) }); }
 function deserialize(txt) { // tolerant of missing/invalid fields
   const s = newState();
@@ -151,6 +157,7 @@ function deserialize(txt) { // tolerant of missing/invalid fields
     }
     for (const id in TECHS) if (d.tech && d.tech[id]) s.tech[id] = true;
     if (Array.isArray(d.order) && d.order.length === s.order.length && s.order.every(x => d.order.includes(x))) s.order = d.order;
+    if (d.trip === true) s.trip = true;
     if ([0, 40, 70, 95].includes(d.repairAt)) s.repairAt = d.repairAt;
     if (['off', 'material', 'signal'].includes(d.bus)) s.bus = d.bus;
     if (Array.isArray(d.log)) s.log = d.log.slice(0, 40);
@@ -160,4 +167,4 @@ function deserialize(txt) { // tolerant of missing/invalid fields
 function save(s) { try { localStorage.setItem(SAVE_KEY, serialize(s)); } catch (e) {} }
 function load() { try { const t = localStorage.getItem(SAVE_KEY); return t ? deserialize(t) : newState(); } catch (e) { return newState(); } }
 
-if (typeof module !== 'undefined') module.exports = { setMode, repair, repairCost, setRepairAt, setBus, visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };
+if (typeof module !== 'undefined') module.exports = { TRIP_CLEAR, setMode, repair, repairCost, setRepairAt, setBus, visible, MODULES, newState, tick, buy, research, salvage, move, toggle, serialize, deserialize, RES, TECHS, TICK };

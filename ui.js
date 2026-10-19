@@ -1,5 +1,5 @@
 'use strict';
-let S = load(), last = Date.now(), acc = 0, focusId = null;
+let S = load(), last = Date.now(), acc = 0, focusId = null, tab = 'mods';
 const $ = id => document.getElementById(id);
 const f = n => n >= 100 ? n.toFixed(0) : n.toFixed(1);
 const sign = n => (n >= 0 ? '+' : '') + n.toFixed(1);
@@ -17,12 +17,33 @@ const REGIONS = { // x, y, w, h in % of the picture, and what the room belongs t
   generator: [55, 14, 35, 27, 'mod'], computer: [12.5, 22, 38, 15.5, 'mod'], extractor: [11, 58, 18, 29, 'mod'], scanner: [36, 52, 15, 13, 'mod'], fabricator: [59.5, 53, 24.5, 35, 'mod'],
   conductors: [55, 41, 34.2, 9.8, 'tech'], thermal: [12, 37.6, 20.5, 18, 'tech'], diagnostics: [36, 37.6, 14.5, 13, 'tech'], bus: [28.5, 67.4, 22.5, 14.6, 'tech'] };
 const TECH_LABEL = { conductors: 'Conductors', thermal: 'Thermal', diagnostics: 'Diagnostics', bus: 'Bus' };
+// Resource flows: abstract conduits drawn over the picture; brightness and speed follow the real rates.
+const modLoad = (id, r) => { const m = S.mods[id]; return !S.trip && m.run > 0 ? m.run * m.units * (MODULES[id].in[r] || 0) * MODES[S.tech.overclock ? m.mode : 'normal'].inp : 0; };
+const rate = r => (S.rates[r] || { p: 0 }).p;
+const FLOWS = [ // d: path in % of the picture; v: intensity 0..1
+  { id: 'egen', res: 'energy', d: 'M72 39.5 H54.5', v: () => S.trip ? 0 : rate('energy') / 12 },
+  { id: 'etrunk', res: 'energy', d: 'M54.5 39.5 V84.5', v: () => ['extractor', 'computer', 'scanner', 'fabricator'].reduce((a, id) => a + modLoad(id, 'energy'), 0) / 10 },
+  { id: 'ecomp', res: 'energy', d: 'M54.5 36.4 H38', v: () => modLoad('computer', 'energy') / 6 },
+  { id: 'escan', res: 'energy', d: 'M54.5 60 H44', v: () => modLoad('scanner', 'energy') / 3 },
+  { id: 'efab', res: 'energy', d: 'M54.5 77 H68', v: () => modLoad('fabricator', 'energy') / 4 },
+  { id: 'eext', res: 'energy', d: 'M54.5 84.5 H22', v: () => modLoad('extractor', 'energy') / 4 },
+  { id: 'mat', res: 'material', d: 'M24 82.2 H53.5 V79 H68', v: () => modLoad('fabricator', 'material') / 4 },
+  { id: 'heat', res: 'heat', d: 'M56.4 84 V12', v: () => S.trip ? 0 : rate('heat') / 12 },
+];
+let flowEls = [], flowOff = [], flowLast = 0;
+const calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function animateFlows(t) {
+  const dt = Math.min(0.1, (t - flowLast) / 1000 || 0); flowLast = t;
+  FLOWS.forEach((fl, i) => { if (fl.i > 0.02) { flowOff[i] -= (2 + 14 * Math.min(1, fl.i)) * dt; flowEls[i].setAttribute('stroke-dashoffset', flowOff[i]); } });
+  requestAnimationFrame(animateFlows);
+}
 let zones = {};
-function modStat(id) { const m = S.mods[id]; return m.units < 1 ? 'dormant' : !m.on ? 'off' : m.cond < 50 ? 'worn' : m.run < 0.99 ? 'strained' : 'live'; }
+function modStat(id) { const m = S.mods[id]; return m.units < 1 ? 'dormant' : S.trip ? 'tripped' : !m.on ? 'off' : m.cond < 50 ? 'worn' : m.run < 0.99 ? 'strained' : 'live'; }
 function initStage() {
   $('stage').innerHTML = `<div class="stagebox">${Object.entries(REGIONS).map(([id, [x, y, w, h]]) =>
     `<button class="zone dormant" data-a="focus" data-id="${id}" style="left:${x}%;top:${y}%;width:${w}%;height:${h}%;--bs:${10000 / w}% ${10000 / h}%;--bp:${100 * x / (100 - w)}% ${100 * y / (100 - h)}%">
-      <span class="zl"></span><span class="zc"><i></i></span></button>`).join('')}<div class="hglow"></div></div>`;
+      <span class="zl"></span><span class="zc"><i></i></span></button>`).join('')}<svg class="flows" viewBox="0 0 100 100" preserveAspectRatio="none">${FLOWS.map(f => `<path class="fbase f-${f.res}" d="${f.d}"/>`).join('')}${FLOWS.map(f => `<path class="fdash f-${f.res}" d="${f.d}"/>`).join('')}</svg><div class="hglow"></div></div>`;
+  flowEls = [...$('stage').querySelectorAll('.fdash')]; flowOff = FLOWS.map(() => 0); if (!initStage.started && !calm && typeof requestAnimationFrame === 'function') { initStage.started = true; requestAnimationFrame(animateFlows); }
   zones = {}; $('stage').querySelectorAll('.zone').forEach(z => { zones[z.dataset.id] = z; });
 }
 function updateStage() {
@@ -42,33 +63,27 @@ function updateStage() {
     z.querySelector('.zc i').style.width = (m.units < 1 ? 0 : m.cond) + '%';
     z.title = locked ? 'Unidentified signal. Needs analysis.' : MODULES[id].name + ': ' + (m.units < 1 ? 'not restored' : Math.round(m.cond) + '% condition');
   }
+  FLOWS.forEach((fl, i) => { fl.i = fl.v(); if (flowEls[i]) flowEls[i].style.opacity = fl.i > 0.02 ? 0.3 + 0.7 * Math.min(1, fl.i) : 0; });
   const g = $('stage').querySelector('.hglow'); if (g) { g.style.opacity = Math.min(1, S.res.heat / 100) * 0.7; g.className = 'hglow' + (S.hot ? ' hot' : ''); }
 }
 function render() {
   updateStage();
+  const ready = Object.entries(TECHS).filter(([id, t]) => !S.tech[id] && t.req.every(r => S.tech[r]) && S.res.computation >= t.cost && S.res.signal >= (t.signal || 0)).length;
+  $('tab-mods').className = tab === 'mods' ? 'on' : ''; $('tab-tech').className = tab === 'tech' ? 'on' : '';
+  $('tab-tech').textContent = 'Research' + (ready ? ' (' + ready + ' ready)' : '');
+  $('mods').hidden = tab !== 'mods'; $('tech').hidden = tab !== 'tech';
   $('res').innerHTML = Object.keys(RES).map(r => {
     const x = S.rates[r] || { p: 0, c: 0 }, v = S.res[r], cap = RES[r].cap;
-    const warn = (r === 'energy' && S.short) ? '<b class="warn">shortage</b>' : (r === 'heat' && S.hot) ? '<b class="warn">overheating</b>' : '';
+    const warn = (r === 'energy' && S.short) ? '<b class="warn">shortage</b>' : (r === 'heat' && S.hot) ? ('<b class="warn">' + (S.trip ? 'THERMAL TRIP' : 'overheating') + '</b>') : '';
     return `<div class="res ${r}"><div class="row"><span>${RES[r].name} ${warn}</span><span>${f(v)} / ${cap}</span></div>
       <div class="bar"><i style="width:${100 * v / cap}%"></i></div>
       <div class="row dim"><span>+${x.p.toFixed(1)} / -${x.c.toFixed(1)} per s</span><span>${S.tech.diagnostics ? eta(r) : sign(x.p - x.c) + '/s'}</span></div></div>`;
   }).join('') + `<button data-a="salvage">Salvage by hand (+2 material)</button>`;
 
   const ids = ['generator', ...S.order].filter(id => visible(S, id)), vis = S.order.filter(id => visible(S, id));
-  const stat = id => { const m = S.mods[id]; return m.units < 1 ? 'dormant' : !m.on ? 'off' : m.cond < 50 ? 'worn' : m.run < 0.99 ? 'strained' : 'live'; };
-  const rooms = ids.map(id => {
-    const m = S.mods[id], cc = m.cond < 30 ? 'bad' : m.cond < 60 ? 'mid' : '';
-    const tag = m.units < 1 ? 'dormant' : !m.on ? 'switched off' : 'running ' + Math.round(m.run * 100) + '%';
-    const mode = S.tech.overclock && m.units > 0 && m.mode !== 'normal' ? `<span class="mode">${m.mode === 'oc' ? 'overclocked' : 'eco mode'}</span>` : '';
-    return `<button class="room ${stat(id)}" data-a="focus" data-id="${id}" title="Show ${MODULES[id].name}"><b>${MODULES[id].name.split(' ').pop()}</b>
-      <span>${m.units < 1 ? 'not restored' : m.units + (m.units === 1 ? ' unit' : ' units')}</span>${mode}
-      <div class="cond ${cc}" title="Condition ${Math.round(m.cond)}%"><i style="width:${m.units < 1 ? 0 : m.cond}%"></i></div><span>${tag}</span></button>`;
-  });
-  if (!S.tech.analysis && S.mods.scanner.units > 0) rooms.push('<div class="room locked"><b>Unknown</b><span>unidentified signal</span><div class="cond"></div><span>needs analysis</span></div>');
-  const linked = rooms.map((h, i) => i && i <= ids.length - 1 && S.mods[ids[i - 1]].run > 0 && S.mods[ids[i]].run > 0 ? '<div class="link flow"></div>' : '<div class="link"></div>');
-  $('map').innerHTML = `<div class="rooms">${rooms.map((h, i) => (i ? linked[i] : '') + h).join('')}</div>
-    <div class="gauge"><div class="row dim"><span>Structure heat</span><span>${f(S.res.heat)} / ${RES.heat.cap}${S.hot ? ' <b class="warn">slowing modules</b>' : ''}</span></div>
-    <div class="gbar ${S.hot ? 'hot' : ''}"><i style="width:${S.res.heat}%"></i><u style="left:${HOT_START}%" title="Modules slow above ${HOT_START}"></u></div></div>`;
+  $('map').innerHTML = `<div class="gauge"><div class="row dim"><span>Structure heat</span><span>${f(S.res.heat)} / ${RES.heat.cap}${S.trip ? ' <b class="warn">THERMAL TRIP: cooling to ' + TRIP_CLEAR + '</b>' : S.hot ? ' <b class="warn">slowing and wearing modules</b>' : ''}</span></div>
+    <div class="gbar ${S.hot ? 'hot' : ''}"><i style="width:${S.res.heat}%"></i><u style="left:${HOT_START}%" title="Modules slow and wear faster above ${HOT_START}"></u>${S.trip ? `<u style="left:${TRIP_CLEAR}%" title="Systems restart below ${TRIP_CLEAR}"></u>` : ''}</div></div>`;
+
   const busCard = S.tech.bus ? `<div class="mod"><div class="row"><b>Resource Bus</b><span class="dim">overflow energy</span></div>
     <p class="dim">When energy storage is full, route the excess instead of wasting it.</p>
     ${[['off', 'Waste it'], ['material', 'To material (2:1)'], ['signal', 'To signal (4:1)']].map(([k, n]) => `<button data-a="bus" data-id="${k}" ${S.bus === k ? 'disabled' : ''}>${n}</button>`).join('')}</div>` : '';
@@ -81,7 +96,7 @@ function render() {
     const i = vis.indexOf(id);
     const prio = S.tech.allocation && i >= 0 ? `<span class="prio">priority ${i + 1}
       <button data-a="up" data-id="${id}">▲</button><button data-a="down" data-id="${id}">▼</button></span>` : '';
-    return `<div class="mod ${focusId === id ? 'focus' : ''}" id="mod-${id}"><div class="row"><b>${d.name}</b><span class="dim">${m.units < 1 ? 'dormant' : m.on ? 'running ' + Math.round(m.run * 100) + '%' : 'switched off'}</span></div>
+    return `<div class="mod ${focusId === id ? 'focus' : ''}" id="mod-${id}"><div class="row"><b>${d.name}</b><span class="dim">${m.units < 1 ? 'dormant' : S.trip ? 'thermal trip' : m.on ? 'running ' + Math.round(m.run * 100) + '%' : 'switched off'}</span></div>
       <p class="dim">${d.desc}</p><p class="dim">Uses ${io(d.in)}/s. Makes ${io(d.out)}/s.</p>
       ${m.units > 0 ? `<p class="dim">Condition ${Math.round(m.cond)}%${m.cond < 50 ? ' <b class="warn">worn</b>' : ''}</p>` : ''}
       <button data-a="buy" data-id="${id}" ${ok ? '' : 'disabled'}>${m.units < 1 ? 'Restore' : 'Add unit'} (${c} material)</button>
@@ -103,12 +118,12 @@ document.addEventListener('pointerdown', e => {
   const b = e.target.closest('button[data-a]'); if (!b || b.disabled) return;
   const a = b.dataset.a, id = b.dataset.id;
   if (a === 'salvage') salvage(S); if (a === 'buy') buy(S, id); if (a === 'toggle') toggle(S, id);
-  if (a === 'bus') setBus(S, id); if (a === 'mode') setMode(S, id, b.dataset.m); if (a === 'repair') repair(S, id); if (a === 'repairAt') setRepairAt(S, +id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
+  if (a === 'tab') tab = id; if (a === 'bus') setBus(S, id); if (a === 'mode') setMode(S, id, b.dataset.m); if (a === 'repair') repair(S, id); if (a === 'repairAt') setRepairAt(S, +id); if (a === 'research') research(S, id); if (a === 'up') move(S, id, -1); if (a === 'down') move(S, id, 1);
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();
   if (a === 'focus' && REGIONS[id] && (REGIONS[id][4] === 'tech' || visible(S, id))) {
-    focusId = id; setTimeout(() => { if (focusId === id) focusId = null; }, 1500); render();
+    tab = REGIONS[id][4] === 'tech' ? 'tech' : 'mods'; focusId = id; setTimeout(() => { if (focusId === id) focusId = null; }, 1500); render();
     const el = $((REGIONS[id][4] === 'tech' ? 'tech-' : 'mod-') + id); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
   }
 });
