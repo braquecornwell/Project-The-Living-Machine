@@ -11,7 +11,30 @@ function eta(r) {
   if (net > 0.05 && v < cap) return 'full in ' + Math.ceil((cap - v) / net) + 's';
   return 'stable';
 }
+
+// ---- Structure picture: dim cutaway, each restored module lights its region -------------
+const REGIONS = { generator: [78, 13, 20, 17], computer: [8, 38, 17, 24], extractor: [13, 69, 21, 16], scanner: [40, 70, 22, 16], fabricator: [47, 27, 22, 19] }; // x, y, w, h in % of the picture
+let zones = {};
+function modStat(id) { const m = S.mods[id]; return m.units < 1 ? 'dormant' : !m.on ? 'off' : m.cond < 50 ? 'worn' : m.run < 0.99 ? 'strained' : 'live'; }
+function initStage() {
+  $('stage').innerHTML = `<div class="stagebox">${Object.entries(REGIONS).map(([id, [x, y, w, h]]) =>
+    `<button class="zone dormant" data-a="focus" data-id="${id}" style="left:${x}%;top:${y}%;width:${w}%;height:${h}%;--bs:${10000 / w}% ${10000 / h}%;--bp:${100 * x / (100 - w)}% ${100 * y / (100 - h)}%">
+      <span class="zl"></span><span class="zc"><i></i></span></button>`).join('')}<div class="hglow"></div></div>`;
+  zones = {}; $('stage').querySelectorAll('.zone').forEach(z => { zones[z.dataset.id] = z; });
+}
+function updateStage() {
+  for (const id in REGIONS) {
+    const z = zones[id], m = S.mods[id]; if (!z) continue;
+    const locked = !visible(S, id), mode = S.tech.overclock && m.units > 0 && m.mode !== 'normal' ? m.mode : '';
+    z.className = 'zone ' + (locked ? 'locked' + (S.mods.scanner.units < 1 ? ' hide' : '') : modStat(id) + ' ' + mode);
+    z.querySelector('.zl').textContent = locked ? '?' : MODULES[id].name.split(' ').pop();
+    z.querySelector('.zc i').style.width = (m.units < 1 ? 0 : m.cond) + '%';
+    z.title = locked ? 'Unidentified signal. Needs analysis.' : MODULES[id].name + ': ' + (m.units < 1 ? 'not restored' : Math.round(m.cond) + '% condition');
+  }
+  const g = $('stage').querySelector('.hglow'); if (g) { g.style.opacity = Math.min(1, S.res.heat / 100) * 0.7; g.className = 'hglow' + (S.hot ? ' hot' : ''); }
+}
 function render() {
+  updateStage();
   $('res').innerHTML = Object.keys(RES).map(r => {
     const x = S.rates[r] || { p: 0, c: 0 }, v = S.res[r], cap = RES[r].cap;
     const warn = (r === 'energy' && S.short) ? '<b class="warn">shortage</b>' : (r === 'heat' && S.hot) ? '<b class="warn">overheating</b>' : '';
@@ -73,7 +96,7 @@ document.addEventListener('pointerdown', e => {
   if (a === 'reset' && confirm('Erase the saved machine and start over?')) { S = newState(); save(S); }
   if (a === 'save') save(S);
   render();
-  if (a === 'focus' && S.mods[id]) {
+  if (a === 'focus' && S.mods[id] && visible(S, id)) {
     focusId = id; setTimeout(() => { if (focusId === id) focusId = null; }, 1500); render();
     const el = $('mod-' + id); if (el) el.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
   }
@@ -85,4 +108,5 @@ setInterval(() => {
 }, 100);
 setInterval(() => save(S), 5000);
 window.addEventListener('beforeunload', () => save(S));
+initStage();
 render();
