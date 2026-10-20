@@ -375,6 +375,13 @@ function texture() {
   for (let i = 0; i < 700; i++) { const c = clusters[Math.floor(R() * 16)], edge = R() < 0.3, x = edge ? (R() < 0.5 ? rnd(0, 90) : rnd(W - 90, W)) : c[0] + rnd(-70, 70), y = edge ? rnd(0, H0) : c[1] + rnd(-50, 50); const r = R() < 0.15 ? rnd(2, 6) : rnd(0.4, 1.7), gr = w.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(150,78,40,${rnd(0.12, 0.34)})`); gr.addColorStop(0.6, `rgba(140,85,45,${rnd(0.05, 0.14)})`); gr.addColorStop(1, 'rgba(140,85,45,0)'); w.fillStyle = gr; w.beginPath(); w.arc(x, y, r, 0, 6.28); w.fill(); }
   for (let i = 0; i < 1800; i++) { w.fillStyle = `rgba(15,45,54,${rnd(0.45, 0.8)})`; w.beginPath(); w.arc(rnd(0, W), rnd(0, H0), rnd(0.3, 0.9), 0, 6.28); w.fill(); }
   for (let i = 0; i < 90; i++) { const x = rnd(0, W), y = rnd(0, H0), a = rnd(0, 6.28), l = rnd(6, 34); line(w, x, y, x + Math.cos(a) * l, y + Math.sin(a) * l, R() < 0.7 ? `rgba(15,45,54,${rnd(0.4, 0.7)})` : `rgba(230,250,250,${rnd(0.04, 0.1)})`, rnd(0.5, 1.1), 0.5); }
+  const nick = (x, y, nx, ny, d) => { // a chip out of the sheet edge, browned around its rim
+    const px = -ny, py = nx, wd = d * rnd(0.8, 2.2), pts = [[x - px * wd, y - py * wd]];
+    for (let i = 1; i < 6; i++) { const t = i / 6, depth = d * Math.sin(t * 3.14) * rnd(0.5, 1.1); pts.push([x - px * wd + px * wd * 2 * t + nx * depth, y - py * wd + py * wd * 2 * t + ny * depth]); }
+    pts.push([x + px * wd, y + py * wd]); w.beginPath(); pts.forEach((p, i) => i ? w.lineTo(p[0], p[1]) : w.moveTo(p[0], p[1])); w.closePath(); w.fillStyle = '#081a1e'; w.fill(); w.strokeStyle = 'rgba(120,85,35,0.3)'; w.lineWidth = 1.4; w.stroke(); };
+  for (const x of [W * 0.322, W * 0.668]) { nick(x + rnd(-6, 6), 0, 0, 1, rnd(4, 10)); if (R() < 0.7) nick(x + rnd(-8, 8), H0, 0, -1, rnd(3, 8)); }
+  for (const x of [0, W]) nick(x, H0 * 0.486 + rnd(-6, 6), x ? -1 : 1, 0, rnd(4, 10));
+  for (let i = 0; i < 7; i++) { const side = Math.floor(rnd(0, 4)); side < 2 ? nick(rnd(40, W - 40), side ? H0 : 0, 0, side ? -1 : 1, rnd(2, 6)) : nick(side === 2 ? 0 : W, rnd(40, H0 - 40), side === 2 ? 1 : -1, 0, rnd(2, 6)); }
 }
 let txTimer = 0;
 function fit() {
@@ -386,14 +393,7 @@ function fit() {
 window.addEventListener('resize', () => { fit(); render(); });
 setInterval(() => {
   const now = Date.now(); acc += Math.min(now - last, 5000) / 1000; last = now;
-  while (acc >= TICK) { tick(S, TICK); acc -= TICK;   const nick = (x, y, nx, ny, d) => { // a chip out of the sheet edge, browned around its rim
-    const px = -ny, py = nx, wd = d * rnd(0.8, 2.2), pts = [[x - px * wd, y - py * wd]];
-    for (let i = 1; i < 6; i++) { const t = i / 6, depth = d * Math.sin(t * 3.14) * rnd(0.5, 1.1); pts.push([x - px * wd + px * wd * 2 * t + nx * depth, y - py * wd + py * wd * 2 * t + ny * depth]); }
-    pts.push([x + px * wd, y + py * wd]); w.beginPath(); pts.forEach((p, i) => i ? w.lineTo(p[0], p[1]) : w.moveTo(p[0], p[1])); w.closePath(); w.fillStyle = '#081a1e'; w.fill(); w.strokeStyle = 'rgba(120,85,35,0.3)'; w.lineWidth = 1.4; w.stroke(); };
-  for (const x of [W * 0.322, W * 0.668]) { nick(x + rnd(-6, 6), 0, 0, 1, rnd(4, 10)); if (R() < 0.7) nick(x + rnd(-8, 8), H0, 0, -1, rnd(3, 8)); }
-  for (const x of [0, W]) nick(x, H0 * 0.486 + rnd(-6, 6), x ? -1 : 1, 0, rnd(4, 10));
-  for (let i = 0; i < 7; i++) { const side = Math.floor(rnd(0, 4)); side < 2 ? nick(rnd(40, W - 40), side ? H0 : 0, 0, side ? -1 : 1, rnd(2, 6)) : nick(side === 2 ? 0 : W, rnd(40, H0 - 40), side === 2 ? 1 : -1, 0, rnd(2, 6)); }
-}
+  while (acc >= TICK) { tick(S, TICK); acc -= TICK; }
   render();
 }, 100);
 setInterval(() => save(S), 5000);
