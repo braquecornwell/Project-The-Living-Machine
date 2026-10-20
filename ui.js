@@ -79,10 +79,6 @@ function modStat(id) { const m = S.mods[id]; return m.units < 1 ? 'dormant' : S.
 
 // ---- The drawing ------------------------------------------------------------------
 function blueprint() {
-  let grid = '', ticks = '';
-  for (let x = 20; x <= W - 20; x += 20) grid += `<path class="${(x - 20) % 100 ? 'gm' : 'gM'}" d="M${x} 20V880"/>`;
-  for (let y = 20; y <= 880; y += 20) grid += `<path class="${(y - 20) % 100 ? 'gm' : 'gM'}" d="M20 ${y}H${W - 20}"/>`;
-  for (let i = 40; i < W - 10; i += 40) ticks += `M${i} 10v8M${i} 882v8`; for (let i = 40; i < 880; i += 40) ticks += `M10 ${i}h8M${W - 18} ${i}h8`;
   const gy = FL_TOP + FL_H;
   const floors = FLOORS.map((fl, i) => { const y = FL_TOP + FL_H * i; return `<g class="fl" data-f="${i}"><path class="slab" d="M90 ${y}H1100"/><text class="fln" x="54" y="${y + 56}" text-anchor="middle">L0${i + 1}</text><text class="fls" x="54" y="${y + 72}" text-anchor="middle">${fl.short}</text><text class="fls" x="54" y="${y + 86}" text-anchor="middle">${i ? '-' + 6 * i : '0'} M</text></g>`; }).join('');
   const pipes = FLOWS.map((fl, i) => `<g class="pipe" data-i="${i}"><path class="po f-${fl.res}" d="${fl.d}"/><path class="pi" d="${fl.d}"/></g>`).join('');
@@ -102,7 +98,6 @@ function blueprint() {
     <pattern id="earth" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><path d="M0 0v10" class="ht"/></pattern>
     ${['energy', 'material', 'heat'].map(k => `<marker id="ar-${k}" viewBox="0 0 9 9" refX="9" refY="4.5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0 9 4.5 0 9z" style="fill:var(--${k === 'material' ? 'material' : k});stroke:none"/></marker>`).join('')}
     ${Object.entries(SYM).map(([k, p]) => `<symbol id="sy-${k}" viewBox="0 0 40 40">${p}</symbol>`).join('')}</defs>
-    <g class="grid">${grid}</g><rect class="fr1" x="8" y="8" width="${W - 16}" height="884"/><rect class="fr2" x="14" y="14" width="${W - 28}" height="872"/><path class="fr1" d="${ticks}"/>
     <rect class="earth" x="90" y="${gy}" width="1010" height="${800 - gy}" fill="url(#earth)"/><path class="gline" d="M90 ${gy}H1100"/><text class="sm" x="96" y="${gy - 6}">GROUND LEVEL 0.0</text>
     <g class="ghost"><rect x="${FL_X}" y="0" width="${RW}" height="${RH}"/><text x="${FL_X + RW / 2}" y="0" text-anchor="middle">UNSURVEYED</text></g>
     ${floors}${pipes}${dashes}${dots}${rms}
@@ -294,11 +289,58 @@ document.addEventListener('change', e => {
   const t = e.target; if (!t.dataset || t.dataset.r === undefined) return;
   setRule(S, +t.dataset.r, { [t.dataset.k]: t.dataset.k === 'v' ? +t.value : t.value }); $('logic')._h = null; render();
 });
+// ---- Vintage distressed grid paper, painted once on two canvases (below and above the drawing) ----------
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function texture() {
+  const pc = $('paper'), wc = $('wear'); if (!pc || !wc || !pc.getContext) return;
+  let k = 1.5; while (W * k * H0 * k > 5.2e6) k -= 0.1;
+  const cw = Math.round(W * k), ch = Math.round(H0 * k); pc.width = wc.width = cw; pc.height = wc.height = ch;
+  let g, w; try { g = pc.getContext('2d'); w = wc.getContext('2d'); } catch (e) { return; } if (!g || !w) return;
+  const R = mulberry(1913), rnd = (a, b) => a + (b - a) * R(); g.scale(k, k); w.scale(k, k);
+  const blot = (c, n, rmin, rmax, amin, amax, rgb) => { for (let i = 0; i < n; i++) { const x = rnd(0, W), y = rnd(0, H0), r = rnd(rmin, rmax), gr = c.createRadialGradient(x, y, 0, x, y, r); const col = typeof rgb === 'string' ? rgb : (R() < 0.5 ? rgb[0] : rgb[1]); gr.addColorStop(0, `rgba(${col},${rnd(amin, amax)})`); gr.addColorStop(1, `rgba(${col},0)`); c.fillStyle = gr; c.fillRect(x - r, y - r, r * 2, r * 2); } };
+  const line = (c, x1, y1, x2, y2, col, lw, j) => { c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(x1 + rnd(-j, j), y1 + rnd(-j, j)); c.lineTo(x2 + rnd(-j, j), y2 + rnd(-j, j)); c.stroke(); };
+  // paper: base, cloudy mottling, grain, fibres
+  g.fillStyle = '#0f2d36'; g.fillRect(0, 0, W, H0);
+  blot(g, 170, 60, 320, 0.025, 0.07, ['155,221,227', '4,16,22']);
+  const t = document.createElement('canvas'); t.width = t.height = 256; const tg = t.getContext('2d'), im = tg.createImageData(256, 256);
+  for (let i = 0; i < im.data.length; i += 4) { const v = R() < 0.5 ? 0 : 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = Math.floor(rnd(0, 28)); }
+  tg.putImageData(im, 0, 0); g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(t, 'repeat'); g.fillRect(0, 0, cw, ch); g.restore();
+  g.lineWidth = 0.6;
+  for (let i = 0; i < 1400; i++) { const x = rnd(0, W), y = rnd(0, H0), a = rnd(0, 6.28), l = rnd(3, 14); g.strokeStyle = R() < 0.6 ? `rgba(155,221,227,${rnd(0.03, 0.07)})` : `rgba(0,0,0,${rnd(0.05, 0.12)})`; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * l / 2 + rnd(-2, 2), y + Math.sin(a) * l / 2 + rnd(-2, 2), x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+  // grid: uneven, broken, faded in places, with a heavier line every fifth square
+  for (const vert of [true, false]) for (let p = 20; p <= (vert ? W : 880) - 20; p += 20) {
+    const major = (p - 20) % 100 === 0, lim = vert ? 880 : W - 20;
+    for (let q = 20; q < lim;) { const e = Math.min(lim, q + rnd(30, 140));
+      if (R() > 0.06) line(g, vert ? p : q, vert ? q : p, vert ? p : e, vert ? e : p, `rgba(127,208,216,${major ? rnd(0.13, 0.24) : rnd(0.05, 0.11)})`, major ? rnd(0.8, 1.3) : rnd(0.5, 0.8), 0.3);
+      q = e + (R() < 0.12 ? rnd(2, 10) : 0); } }
+  // hand-ruled sheet border with tick marks
+  const frame = (x1, y1, x2, y2, a, lw) => { const horiz = y1 === y2, len = horiz ? x2 - x1 : y2 - y1; for (let d = 0; d < len; d += 70) { const e = Math.min(len, d + 70); line(g, horiz ? x1 + d : x1, horiz ? y1 : y1 + d, horiz ? x1 + e : x1, horiz ? y1 : y1 + e, `rgba(155,221,227,${a * rnd(0.75, 1)})`, lw, 0.25); } };
+  for (const [o, a, lw] of [[8, 0.55, 1.6], [14, 0.32, 1.1]]) { frame(o, o, W - o, o, a, lw); frame(o, H0 - o, W - o, H0 - o, a, lw); frame(o, o, o, H0 - o, a, lw); frame(W - o, o, W - o, H0 - o, a, lw); }
+  for (let i = 40; i < W - 10; i += 40) { line(g, i, 10, i, 18, 'rgba(155,221,227,.5)', 1, 0.2); line(g, i, 882, i, 890, 'rgba(155,221,227,.5)', 1, 0.2); }
+  for (let i = 40; i < 880; i += 40) { line(g, 10, i, 18, i, 'rgba(155,221,227,.5)', 1, 0.2); line(g, W - 18, i, W - 10, i, 'rgba(155,221,227,.5)', 1, 0.2); }
+  // wear layer, drawn over everything: stains, ageing, vignette, folds, foxing, worn ink, scratches
+  blot(w, 60, 90, 340, 0.012, 0.035, '120,100,50'); blot(w, 7, 120, 380, 0.03, 0.06, '210,240,240');
+  for (let i = 0; i < 5; i++) { const x = rnd(0.1 * W, 0.9 * W), y = rnd(80, 820), r = rnd(70, 190), gr = w.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(80,60,25,0.02)'); gr.addColorStop(0.82, 'rgba(70,55,25,0.03)'); gr.addColorStop(0.93, 'rgba(50,40,15,0.12)'); gr.addColorStop(0.97, 'rgba(40,30,10,0.18)'); gr.addColorStop(1, 'rgba(40,30,10,0)'); w.fillStyle = gr; w.fillRect(x - r, y - r, r * 2, r * 2); }
+  const vg = w.createRadialGradient(W / 2, H0 / 2, H0 * 0.42, W / 2, H0 / 2, W * 0.62); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.36)'); w.fillStyle = vg; w.fillRect(0, 0, W, H0);
+  for (const [cx, cy] of [[0, 0], [W, 0], [0, H0], [W, H0]]) { const gr = w.createRadialGradient(cx, cy, 0, cx, cy, 240); gr.addColorStop(0, 'rgba(0,0,0,0.28)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = gr; w.fillRect(cx - 240, cy - 240, 480, 480); }
+  for (const [vert, pos] of [[true, W * 0.34], [true, W * 0.67], [false, H0 * 0.5]]) { // folds
+    const span = vert ? H0 : W, band = w.createLinearGradient(vert ? pos - 40 : 0, vert ? 0 : pos - 40, vert ? pos + 40 : 0, vert ? 0 : pos + 40);
+    band.addColorStop(0, 'rgba(0,0,0,0)'); band.addColorStop(0.5, 'rgba(0,0,0,0.07)'); band.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = band; w.fillRect(vert ? pos - 40 : 0, vert ? 0 : pos - 40, vert ? 80 : W, vert ? H0 : 80);
+    for (let d = 0; d < span;) { const e = Math.min(span, d + rnd(40, 160));
+      if (R() > 0.15) { line(w, vert ? pos : d, vert ? d : pos, vert ? pos : e, vert ? e : pos, `rgba(0,0,0,${rnd(0.1, 0.2)})`, 1.4, 0.4); line(w, vert ? pos + 1.8 : d, vert ? d : pos + 1.8, vert ? pos + 1.8 : e, vert ? e : pos + 1.8, `rgba(200,240,240,${rnd(0.05, 0.12)})`, 1, 0.4); }
+      d = e; } }
+  const clusters = Array.from({ length: 16 }, () => [rnd(0, W), rnd(0, H0)]);
+  for (let i = 0; i < 700; i++) { const c = clusters[Math.floor(R() * 16)], edge = R() < 0.3, x = edge ? (R() < 0.5 ? rnd(0, 90) : rnd(W - 90, W)) : c[0] + rnd(-70, 70), y = edge ? rnd(0, H0) : c[1] + rnd(-50, 50); w.fillStyle = `rgba(150,120,60,${rnd(0.1, 0.3)})`; w.beginPath(); w.arc(x, y, rnd(0.4, 1.7), 0, 6.28); w.fill(); }
+  for (let i = 0; i < 1800; i++) { w.fillStyle = `rgba(15,45,54,${rnd(0.45, 0.8)})`; w.beginPath(); w.arc(rnd(0, W), rnd(0, H0), rnd(0.3, 0.9), 0, 6.28); w.fill(); }
+  for (let i = 0; i < 90; i++) { const x = rnd(0, W), y = rnd(0, H0), a = rnd(0, 6.28), l = rnd(6, 34); line(w, x, y, x + Math.cos(a) * l, y + Math.sin(a) * l, R() < 0.7 ? `rgba(15,45,54,${rnd(0.4, 0.7)})` : `rgba(230,250,250,${rnd(0.04, 0.1)})`, rnd(0.5, 1.1), 0.5); }
+}
+let txTimer = 0;
 function fit() {
   const a = innerWidth / innerHeight; W = Math.round(Math.max(1600, Math.min(2400, H0 * a)));
   const s = Math.min(innerWidth / W, innerHeight / H0), el = $('sheet');
   el.style.width = W + 'px'; el.style.height = H0 + 'px'; el.style.transform = `translate(-50%,-50%) scale(${s})`;
-  if (built !== W) build();
+  if (built !== W) { build(); clearTimeout(txTimer); txTimer = setTimeout(texture, built ? 250 : 0); }
 }
 window.addEventListener('resize', () => { fit(); render(); });
 setInterval(() => {
