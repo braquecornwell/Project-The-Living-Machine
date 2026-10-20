@@ -9,7 +9,7 @@ button{font:inherit;color:var(--bpl);background:transparent;border:1px solid rgb
 button:hover:not(:disabled){border-color:#fff;color:#fff}button:disabled{opacity:.35;cursor:default}button:focus-visible{outline:1px solid #fff;outline-offset:2px}button.on{background:#16424b}
 select,input[type=number]{font:inherit;font-size:12px;color:var(--tx);background:#0b242b;border:1px solid rgba(155,221,227,.6);padding:3px 4px;margin:2px 2px 2px 0}input[type=number]{width:64px}
 /* instruments */
-.mt{top:34px;width:184px;height:66px;border:1px solid rgba(155,221,227,.6);padding:7px 10px;background:rgba(15,45,54,.8)}
+.mt{top:34px;width:184px;height:66px;border:1px solid rgba(155,221,227,.6);padding:7px 10px;background:rgba(15,45,54,.66)}
 .mb{position:relative;height:10px;border:1px solid rgba(155,221,227,.5);margin:6px 0 4px}.mb i{display:block;height:100%;background:var(--c,var(--bpl))}
 .mb::after{content:"";position:absolute;left:0;top:0;right:0;bottom:0;background:repeating-linear-gradient(90deg,transparent 0,transparent 15px,rgba(155,221,227,.55) 15px,rgba(155,221,227,.55) 16px)}
 .energy{--c:var(--energy)}.material{--c:var(--material)}.computation{--c:var(--computation)}.signal{--c:var(--signal)}.components{--c:var(--k)}
@@ -18,7 +18,7 @@ select,input[type=number]{font:inherit;font-size:12px;color:var(--tx);background
 .fits{top:40px;display:flex}.salvage{right:30px;top:36px;width:140px;border-style:dashed;padding:8px 10px;text-align:left;line-height:1.3;margin:0}
 .bar{height:8px;border:1px solid rgba(155,221,227,.5);margin:4px 0}.bar i{display:block;height:100%;background:var(--c,var(--bpl))}
 /* panels */
-#works,#logic{top:118px;width:370px;height:570px;border:1px solid rgba(155,221,227,.5);background:rgba(15,45,54,.8);display:flex;flex-direction:column}
+#works,#logic{top:118px;width:370px;height:570px;border:1px solid rgba(155,221,227,.5);background:rgba(15,45,54,.66);display:flex;flex-direction:column}
 .phead{display:flex;justify-content:space-between;padding:9px 12px;border-bottom:1px solid rgba(155,221,227,.4)}.phead b{color:var(--bpl);letter-spacing:.06em}
 .ptabs{display:flex;border-bottom:1px solid rgba(155,221,227,.4)}.ptabs button{flex:1;margin:0;border:0;padding:9px 6px}.ptabs button.on{background:#16424b;color:#fff}
 .pbody{flex:1;overflow-y:auto;padding:10px 12px;scrollbar-width:thin;scrollbar-color:#355657 transparent}

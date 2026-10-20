@@ -299,14 +299,50 @@ function texture() {
   const R = mulberry(1913), rnd = (a, b) => a + (b - a) * R(); g.scale(k, k); w.scale(k, k);
   const blot = (c, n, rmin, rmax, amin, amax, rgb) => { for (let i = 0; i < n; i++) { const x = rnd(0, W), y = rnd(0, H0), r = rnd(rmin, rmax), gr = c.createRadialGradient(x, y, 0, x, y, r); const col = typeof rgb === 'string' ? rgb : (R() < 0.5 ? rgb[0] : rgb[1]); gr.addColorStop(0, `rgba(${col},${rnd(amin, amax)})`); gr.addColorStop(1, `rgba(${col},0)`); c.fillStyle = gr; c.fillRect(x - r, y - r, r * 2, r * 2); } };
   const line = (c, x1, y1, x2, y2, col, lw, j) => { c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); c.moveTo(x1 + rnd(-j, j), y1 + rnd(-j, j)); c.lineTo(x2 + rnd(-j, j), y2 + rnd(-j, j)); c.stroke(); };
+  // irregular outlines: low-frequency wobble so nothing is a clean circle or a ruled line
+  const wob = (n, amp) => { const h = Array.from({ length: n }, (_, i) => [rnd(0, 6.28), rnd(0.4, 1) * amp / (i * 0.7 + 1), i + 2 + Math.floor(rnd(0, 2))]); return a => h.reduce((t, [p, A, q]) => t + A * Math.sin(q * a + p), 0); };
+  const blobPts = (x, y, rx, ry, rot) => { const f = wob(5, 0.2), pts = []; for (let i = 0; i <= 90; i++) { const a = i / 90 * 6.2832, r = 1 + f(a) + rnd(-0.012, 0.012), px = Math.cos(a) * rx * r, py = Math.sin(a) * ry * r; pts.push([x + px * Math.cos(rot) - py * Math.sin(rot), y + px * Math.sin(rot) + py * Math.cos(rot)]); } return pts; };
+  const trace = (c, pts) => { c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); };
+  const rim = (pts, strength, gap, wmin, wmax) => { // pigment gathers at the edge: soft, uneven, sometimes missing
+    g.save(); g.lineCap = 'round'; g.lineJoin = 'round'; g.shadowColor = `rgba(30,22,12,${0.5 * strength})`; g.shadowBlur = 6;
+    for (let i = 0; i < pts.length - 1;) { const e = Math.min(pts.length - 1, i + Math.floor(rnd(8, 26)));
+      if (R() > gap) { g.beginPath(); for (let j = i; j <= e; j++) j === i ? g.moveTo(pts[j][0], pts[j][1]) : g.lineTo(pts[j][0], pts[j][1]); g.strokeStyle = `rgba(32,22,12,${rnd(0.07, 0.26) * strength})`; g.lineWidth = rnd(wmin, wmax); g.stroke(); }
+      i = e >= pts.length - 1 ? e : e - 2; }
+    g.restore(); };
+  const stain = (x, y, rx, ry, rot, strength, cup) => {
+    const pts = blobPts(x, y, rx, ry, rot);
+    g.save(); trace(g, pts); g.clip(); // inside the stain: warm wash that darkens toward the edge
+    const gr = g.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry) * 1.15); gr.addColorStop(0, `rgba(185,145,75,${(cup ? 0.05 : 0.12) * strength})`); gr.addColorStop(0.7, `rgba(120,85,40,${(cup ? 0.06 : 0.1) * strength})`); gr.addColorStop(1, `rgba(40,24,8,${(cup ? 0.2 : 0.26) * strength})`);
+    g.fillStyle = gr; g.fillRect(x - rx * 1.5, y - ry * 1.5, rx * 3, ry * 3);
+    for (let i = 0; i < 6; i++) { trace(g, blobPts(x + rnd(-rx * 0.5, rx * 0.5), y + rnd(-ry * 0.5, ry * 0.5), rx * rnd(0.2, 0.6), ry * rnd(0.2, 0.6), rnd(0, 6.28))); g.fillStyle = R() < 0.5 ? `rgba(40,24,8,${rnd(0.02, 0.06) * strength})` : `rgba(205,165,95,${rnd(0.02, 0.06) * strength})`; g.fill(); }
+    g.restore();
+    rim(pts, strength, cup ? 0.12 : 0.2, cup ? 2.2 : 1.4, cup ? 5.5 : 3.6);
+    if (cup && R() < 0.8) rim(blobPts(x + rnd(-8, 8), y + rnd(-8, 8), rx * rnd(0.92, 1.03), ry * rnd(0.92, 1.03), rot + rnd(-0.25, 0.25)), strength * 0.45, 0.4, 1.2, 3);
+  };
+  const spatter = (x, y, spread, n, strength) => { for (let i = 0; i < n; i++) { const a = rnd(0, 6.28), d = Math.abs(rnd(-1, 1) + rnd(-1, 1)) * spread, r = rnd(0.6, 3.2) * (1 - d / (spread * 2.2)); if (r < 0.5) continue; const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d; g.fillStyle = `rgba(175,135,70,${0.08 * strength})`; g.beginPath(); g.arc(px, py, r, 0, 6.28); g.fill(); g.strokeStyle = `rgba(38,22,8,${rnd(0.12, 0.3) * strength})`; g.lineWidth = 0.7; g.stroke(); } };
+  const fold = (vert, pos, tilt, strength) => { // a crease: wavy, skewed, fading in and out, broken and whitened by wear
+    const span = vert ? H0 : W, f = wob(4, 1.5), env = wob(4, 0.55), pts = [], inten = [];
+    for (let d = 0; d <= span; d += 8) { const o = pos + tilt * (d - span / 2) + f(d / 120), t = d / span, edge = Math.min(1, Math.min(t, 1 - t) * 7); pts.push(vert ? [o, d] : [d, o]); inten.push(Math.max(0, Math.min(1, 0.55 + env(d / 120))) * (0.3 + 0.7 * edge)); }
+    const path = (i, e, off) => { w.beginPath(); for (let j = i; j <= e; j++) { const p = pts[j], x = p[0] + (vert ? off : 0), y = p[1] + (vert ? 0 : off); j === i ? w.moveTo(x, y) : w.lineTo(x, y); } };
+    for (let i = 0; i < pts.length - 1;) { const e = Math.min(pts.length - 1, i + 6), k = strength * inten[i];
+      w.save(); w.shadowColor = 'rgba(0,0,0,0.25)'; w.shadowBlur = 12; path(i, Math.min(e + 1, pts.length - 1), 0); w.strokeStyle = `rgba(0,0,0,${0.012 * k})`; w.lineWidth = 8; w.stroke(); w.restore();
+      if (R() > 0.12) { path(i, Math.min(e + 1, pts.length - 1), 0); w.strokeStyle = `rgba(0,0,0,${rnd(0.05, 0.16) * k})`; w.lineWidth = rnd(0.7, 1.5); w.stroke(); path(i, Math.min(e + 1, pts.length - 1), rnd(1.3, 2.4)); w.strokeStyle = `rgba(210,240,240,${rnd(0.03, 0.09) * k})`; w.lineWidth = rnd(0.5, 1.1); w.stroke(); }
+      i = e; }
+    for (let i = 0; i < span / 4; i++) { const j = Math.floor(R() * pts.length), p = pts[j]; if (R() > inten[j]) continue; w.fillStyle = `rgba(220,245,245,${rnd(0.05, 0.18) * strength})`; w.fillRect(p[0] + rnd(-2, 2), p[1] + rnd(-2, 2), rnd(0.5, 1.8), rnd(0.5, 1.8)); }
+  };
   // paper: base, cloudy mottling, grain, fibres
   g.fillStyle = '#0f2d36'; g.fillRect(0, 0, W, H0);
   blot(g, 170, 60, 320, 0.025, 0.07, ['155,221,227', '4,16,22']);
+  // the print shows the weave of the starched linen drawing it was copied from, and faint streaks from hand-coated paper
+  const wv = document.createElement('canvas'); wv.width = wv.height = 96; const wg = wv.getContext('2d'), wi = wg.createImageData(96, 96), tv = Array.from({ length: 96 }, () => rnd(0.55, 1.3)), th = Array.from({ length: 96 }, () => rnd(0.55, 1.3));
+  for (let y = 0; y < 96; y++) for (let x = 0; x < 96; x++) { const i = (y * 96 + x) * 4, over = (Math.floor(x / 3) + Math.floor(y / 3)) % 2, tt = over ? Math.sin(x * 2.094) * tv[x] : Math.sin(y * 2.094) * th[y]; wi.data[i] = wi.data[i + 1] = wi.data[i + 2] = tt > 0 ? 255 : 0; wi.data[i + 3] = Math.min(255, Math.abs(tt) * 15); }
+  wg.putImageData(wi, 0, 0); g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(wv, 'repeat'); g.fillRect(0, 0, cw, ch); g.restore();
+  g.lineCap = 'round'; for (let i = 0; i < 70; i++) { const x = rnd(-200, W), y = rnd(0, H0), l = rnd(300, 1300), an = rnd(-0.05, 0.05); g.strokeStyle = R() < 0.5 ? `rgba(155,221,227,${rnd(0.012, 0.03)})` : `rgba(0,10,16,${rnd(0.02, 0.05)})`; g.lineWidth = rnd(4, 26); g.beginPath(); g.moveTo(x, y); g.lineTo(x + l, y + l * an); g.stroke(); }
   const t = document.createElement('canvas'); t.width = t.height = 256; const tg = t.getContext('2d'), im = tg.createImageData(256, 256);
   for (let i = 0; i < im.data.length; i += 4) { const v = R() < 0.5 ? 0 : 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = Math.floor(rnd(0, 28)); }
   tg.putImageData(im, 0, 0); g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = g.createPattern(t, 'repeat'); g.fillRect(0, 0, cw, ch); g.restore();
   g.lineWidth = 0.6;
-  for (let i = 0; i < 1400; i++) { const x = rnd(0, W), y = rnd(0, H0), a = rnd(0, 6.28), l = rnd(3, 14); g.strokeStyle = R() < 0.6 ? `rgba(155,221,227,${rnd(0.03, 0.07)})` : `rgba(0,0,0,${rnd(0.05, 0.12)})`; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * l / 2 + rnd(-2, 2), y + Math.sin(a) * l / 2 + rnd(-2, 2), x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
+  for (let i = 0; i < 2600; i++) { const x = rnd(0, W), y = rnd(0, H0), a = rnd(0, 6.28), l = rnd(4, 22); g.strokeStyle = R() < 0.6 ? `rgba(155,221,227,${rnd(0.04, 0.1)})` : `rgba(0,0,0,${rnd(0.06, 0.14)})`; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + Math.cos(a) * l / 2 + rnd(-2, 2), y + Math.sin(a) * l / 2 + rnd(-2, 2), x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke(); }
   // grid: uneven, broken, faded in places, with a heavier line every fifth square
   for (const vert of [true, false]) for (let p = 20; p <= (vert ? W : 880) - 20; p += 20) {
     const major = (p - 20) % 100 === 0, lim = vert ? 880 : W - 20;
@@ -318,20 +354,25 @@ function texture() {
   for (const [o, a, lw] of [[8, 0.55, 1.6], [14, 0.32, 1.1]]) { frame(o, o, W - o, o, a, lw); frame(o, H0 - o, W - o, H0 - o, a, lw); frame(o, o, o, H0 - o, a, lw); frame(W - o, o, W - o, H0 - o, a, lw); }
   for (let i = 40; i < W - 10; i += 40) { line(g, i, 10, i, 18, 'rgba(155,221,227,.5)', 1, 0.2); line(g, i, 882, i, 890, 'rgba(155,221,227,.5)', 1, 0.2); }
   for (let i = 40; i < 880; i += 40) { line(g, 10, i, 18, i, 'rgba(155,221,227,.5)', 1, 0.2); line(g, W - 18, i, W - 10, i, 'rgba(155,221,227,.5)', 1, 0.2); }
+  // coffee and tea stains soak into the paper itself, so they sit under the drawing
+  stain(W * 0.935, 55, 74, 70, 0.4, 1, true); spatter(W * 0.935, 55, 130, 26, 0.9);
+  stain(46, 530, 100, 64, 0.55, 0.85, false); stain(150, 596, 24, 17, 0.2, 0.7, false); spatter(70, 560, 120, 30, 0.8);
+  stain(W * 0.53, 852, 64, 61, 1.1, 0.95, true); spatter(W * 0.53 + 30, 820, 80, 14, 0.7);
+  stain(W * 0.37, 322, 36, 30, 0.7, 0.45, true);
   // wear layer, drawn over everything: stains, ageing, vignette, folds, foxing, worn ink, scratches
   blot(w, 60, 90, 340, 0.012, 0.035, '120,100,50'); blot(w, 7, 120, 380, 0.03, 0.06, '210,240,240');
-  for (let i = 0; i < 5; i++) { const x = rnd(0.1 * W, 0.9 * W), y = rnd(80, 820), r = rnd(70, 190), gr = w.createRadialGradient(x, y, 0, x, y, r);
-    gr.addColorStop(0, 'rgba(80,60,25,0.02)'); gr.addColorStop(0.82, 'rgba(70,55,25,0.03)'); gr.addColorStop(0.93, 'rgba(50,40,15,0.12)'); gr.addColorStop(0.97, 'rgba(40,30,10,0.18)'); gr.addColorStop(1, 'rgba(40,30,10,0)'); w.fillStyle = gr; w.fillRect(x - r, y - r, r * 2, r * 2); }
-  const vg = w.createRadialGradient(W / 2, H0 / 2, H0 * 0.42, W / 2, H0 / 2, W * 0.62); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.36)'); w.fillStyle = vg; w.fillRect(0, 0, W, H0);
-  for (const [cx, cy] of [[0, 0], [W, 0], [0, H0], [W, H0]]) { const gr = w.createRadialGradient(cx, cy, 0, cx, cy, 240); gr.addColorStop(0, 'rgba(0,0,0,0.28)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = gr; w.fillRect(cx - 240, cy - 240, 480, 480); }
-  for (const [vert, pos] of [[true, W * 0.34], [true, W * 0.67], [false, H0 * 0.5]]) { // folds
-    const span = vert ? H0 : W, band = w.createLinearGradient(vert ? pos - 40 : 0, vert ? 0 : pos - 40, vert ? pos + 40 : 0, vert ? 0 : pos + 40);
-    band.addColorStop(0, 'rgba(0,0,0,0)'); band.addColorStop(0.5, 'rgba(0,0,0,0.07)'); band.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = band; w.fillRect(vert ? pos - 40 : 0, vert ? 0 : pos - 40, vert ? 80 : W, vert ? H0 : 80);
-    for (let d = 0; d < span;) { const e = Math.min(span, d + rnd(40, 160));
-      if (R() > 0.15) { line(w, vert ? pos : d, vert ? d : pos, vert ? pos : e, vert ? e : pos, `rgba(0,0,0,${rnd(0.1, 0.2)})`, 1.4, 0.4); line(w, vert ? pos + 1.8 : d, vert ? d : pos + 1.8, vert ? pos + 1.8 : e, vert ? e : pos + 1.8, `rgba(200,240,240,${rnd(0.05, 0.12)})`, 1, 0.4); }
-      d = e; } }
+  const vg = w.createRadialGradient(W / 2, H0 / 2, H0 * 0.42, W / 2, H0 / 2, W * 0.62); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(18,14,6,0.4)'); w.fillStyle = vg; w.fillRect(0, 0, W, H0);
+  for (const [cx, cy] of [[0, 0], [W, 0], [0, H0], [W, H0]]) { const gr = w.createRadialGradient(cx, cy, 0, cx, cy, 240); gr.addColorStop(0, 'rgba(18,14,6,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = gr; w.fillRect(cx - 240, cy - 240, 480, 480); }
+  fold(true, W * 0.322, 0.011, 0.7); fold(true, W * 0.668, -0.016, 0.4); fold(false, H0 * 0.486, 0.014, 0.55);
+  for (let i = 0; i < 300; i++) { // edges age first: browned and brittle, darker than the middle of the sheet
+    const side = Math.floor(rnd(0, 4)), along = side < 2 ? rnd(0, W) : rnd(0, H0), off = rnd(0, 30), r = rnd(18, 70);
+    const x = side === 0 ? along : side === 1 ? along : side === 2 ? off : W - off, y = side === 0 ? off : side === 1 ? H0 - off : along;
+    const gr = w.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(135,95,38,${rnd(0.025, 0.07)})`); gr.addColorStop(1, 'rgba(135,95,38,0)'); w.fillStyle = gr; w.fillRect(x - r, y - r, r * 2, r * 2); }
+  for (let i = 0; i < 16; i++) { // cockling: the sheet has warped slightly, so light and shade ripple across it
+    w.save(); w.translate(rnd(0, W), rnd(0, H0)); w.rotate(rnd(-0.6, 0.6)); const len = rnd(300, 900), gr = w.createLinearGradient(-70, 0, 70, 0);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, R() < 0.5 ? `rgba(220,245,245,${rnd(0.015, 0.035)})` : `rgba(0,0,0,${rnd(0.025, 0.05)})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = gr; w.fillRect(-70, -len / 2, 140, len); w.restore(); }
   const clusters = Array.from({ length: 16 }, () => [rnd(0, W), rnd(0, H0)]);
-  for (let i = 0; i < 700; i++) { const c = clusters[Math.floor(R() * 16)], edge = R() < 0.3, x = edge ? (R() < 0.5 ? rnd(0, 90) : rnd(W - 90, W)) : c[0] + rnd(-70, 70), y = edge ? rnd(0, H0) : c[1] + rnd(-50, 50); w.fillStyle = `rgba(150,120,60,${rnd(0.1, 0.3)})`; w.beginPath(); w.arc(x, y, rnd(0.4, 1.7), 0, 6.28); w.fill(); }
+  for (let i = 0; i < 700; i++) { const c = clusters[Math.floor(R() * 16)], edge = R() < 0.3, x = edge ? (R() < 0.5 ? rnd(0, 90) : rnd(W - 90, W)) : c[0] + rnd(-70, 70), y = edge ? rnd(0, H0) : c[1] + rnd(-50, 50); const r = R() < 0.15 ? rnd(2, 6) : rnd(0.4, 1.7), gr = w.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(150,78,40,${rnd(0.12, 0.34)})`); gr.addColorStop(0.6, `rgba(140,85,45,${rnd(0.05, 0.14)})`); gr.addColorStop(1, 'rgba(140,85,45,0)'); w.fillStyle = gr; w.beginPath(); w.arc(x, y, r, 0, 6.28); w.fill(); }
   for (let i = 0; i < 1800; i++) { w.fillStyle = `rgba(15,45,54,${rnd(0.45, 0.8)})`; w.beginPath(); w.arc(rnd(0, W), rnd(0, H0), rnd(0.3, 0.9), 0, 6.28); w.fill(); }
   for (let i = 0; i < 90; i++) { const x = rnd(0, W), y = rnd(0, H0), a = rnd(0, 6.28), l = rnd(6, 34); line(w, x, y, x + Math.cos(a) * l, y + Math.sin(a) * l, R() < 0.7 ? `rgba(15,45,54,${rnd(0.4, 0.7)})` : `rgba(230,250,250,${rnd(0.04, 0.1)})`, rnd(0.5, 1.1), 0.5); }
 }
@@ -345,7 +386,14 @@ function fit() {
 window.addEventListener('resize', () => { fit(); render(); });
 setInterval(() => {
   const now = Date.now(); acc += Math.min(now - last, 5000) / 1000; last = now;
-  while (acc >= TICK) { tick(S, TICK); acc -= TICK; }
+  while (acc >= TICK) { tick(S, TICK); acc -= TICK;   const nick = (x, y, nx, ny, d) => { // a chip out of the sheet edge, browned around its rim
+    const px = -ny, py = nx, wd = d * rnd(0.8, 2.2), pts = [[x - px * wd, y - py * wd]];
+    for (let i = 1; i < 6; i++) { const t = i / 6, depth = d * Math.sin(t * 3.14) * rnd(0.5, 1.1); pts.push([x - px * wd + px * wd * 2 * t + nx * depth, y - py * wd + py * wd * 2 * t + ny * depth]); }
+    pts.push([x + px * wd, y + py * wd]); w.beginPath(); pts.forEach((p, i) => i ? w.lineTo(p[0], p[1]) : w.moveTo(p[0], p[1])); w.closePath(); w.fillStyle = '#081a1e'; w.fill(); w.strokeStyle = 'rgba(120,85,35,0.3)'; w.lineWidth = 1.4; w.stroke(); };
+  for (const x of [W * 0.322, W * 0.668]) { nick(x + rnd(-6, 6), 0, 0, 1, rnd(4, 10)); if (R() < 0.7) nick(x + rnd(-8, 8), H0, 0, -1, rnd(3, 8)); }
+  for (const x of [0, W]) nick(x, H0 * 0.486 + rnd(-6, 6), x ? -1 : 1, 0, rnd(4, 10));
+  for (let i = 0; i < 7; i++) { const side = Math.floor(rnd(0, 4)); side < 2 ? nick(rnd(40, W - 40), side ? H0 : 0, 0, side ? -1 : 1, rnd(2, 6)) : nick(side === 2 ? 0 : W, rnd(40, H0 - 40), side === 2 ? 1 : -1, 0, rnd(2, 6)); }
+}
   render();
 }, 100);
 setInterval(() => save(S), 5000);
